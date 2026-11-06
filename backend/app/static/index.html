@@ -223,6 +223,13 @@
           <p class="text-center text-xs text-slate-500 mt-6">
             New to IIPS? <a href="#" onclick="showRegisterScreen()" class="text-blue-600 font-semibold hover:underline">Create an Account</a>
           </p>
+
+          <div class="mt-6 pt-4 border-t border-slate-100 text-center">
+            <p class="text-[11px] text-slate-500 mb-1.5">Official IIPS DAVV Administrator Account:</p>
+            <button onclick="quickFill('admin@iips.davv.ac.in', 'Admin@IIPS2026')" class="text-xs bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 py-1.5 px-3 rounded-lg font-mono inline-flex items-center">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 mr-1.5 text-blue-600"></i> admin@iips.davv.ac.in
+            </button>
+          </div>
         </div>
       `;
       lucide.createIcons();
@@ -486,11 +493,20 @@
                 <span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md uppercase tracking-wider">
                   ${doc.category}
                 </span>
-                ${m && m.is_urgent ? `
-                  <span class="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-bold rounded-md flex items-center">
-                    <i data-lucide="zap" class="w-3 h-3 mr-0.5"></i> Urgent
-                  </span>
-                ` : ''}
+                <div class="flex items-center space-x-1.5">
+                  ${m && m.is_urgent ? `
+                    <span class="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-bold rounded-md flex items-center">
+                      <i data-lucide="zap" class="w-3 h-3 mr-0.5"></i> Urgent
+                    </span>
+                  ` : ''}
+                  ${(currentUser && (currentUser.role === 'faculty' || currentUser.role === 'admin')) ? `
+                    <button onclick="event.stopPropagation(); handleDeleteDocument(${doc.id}, '${doc.title.replace(/'/g, "")}')" 
+                            title="Delete Notice"
+                            class="p-1 text-slate-400 hover:text-red-600 rounded-md hover:bg-red-50 transition">
+                      <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    </button>
+                  ` : ''}
+                </div>
               </div>
               <h3 class="text-sm font-bold text-slate-900 leading-snug mb-1.5">${doc.title}</h3>
               ${m && m.summary ? `
@@ -564,7 +580,7 @@
           ${m && m.contact_info ? `<p><strong class="text-slate-900">Contact:</strong> ${m.contact_info}</p>` : ''}
         </div>
 
-        <div class="grid grid-cols-2 gap-2">
+        <div class="grid grid-cols-2 gap-2 mb-2">
           <a href="${API_BASE}/documents/${doc.id}/file" target="_blank" 
              class="py-2.5 px-3 bg-blue-600 text-white rounded-xl text-xs font-semibold flex items-center justify-center hover:bg-blue-700 transition">
             <i data-lucide="file-text" class="w-4 h-4 mr-1.5"></i> Open PDF
@@ -574,6 +590,12 @@
             <i data-lucide="message-square" class="w-4 h-4 mr-1.5"></i> Ask AI
           </button>
         </div>
+        ${(currentUser && (currentUser.role === 'faculty' || currentUser.role === 'admin')) ? `
+          <button onclick="handleDeleteDocument(${doc.id}, '${doc.title.replace(/'/g, "")}')" 
+                  class="w-full py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center justify-center border border-red-200 transition">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5 mr-1.5"></i> Delete Notice
+          </button>
+        ` : ''}
       `;
       modal.classList.remove("hidden");
       lucide.createIcons();
@@ -679,6 +701,13 @@
                 <button onclick="summarizeDoc(${doc.id}, '${doc.title}')" class="flex-1 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold rounded-lg flex items-center justify-center">
                   <i data-lucide="sparkles" class="w-3.5 h-3.5 mr-1"></i> AI Summary
                 </button>
+                ${(currentUser && (currentUser.role === 'faculty' || currentUser.role === 'admin')) ? `
+                  <button onclick="handleDeleteDocument(${doc.id}, '${doc.title.replace(/'/g, "")}')" 
+                          title="Delete Resource"
+                          class="py-1.5 px-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg flex items-center justify-center transition">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                  </button>
+                ` : ''}
               </div>
             </div>
           `;
@@ -722,6 +751,26 @@
         lucide.createIcons();
       } catch (e) {
         content.innerHTML = `<p class="text-red-500 text-xs">Failed to generate summary.</p>`;
+      }
+    }
+
+    async function handleDeleteDocument(id, title) {
+      if (!confirm(`Are you sure you want to permanently delete "${title}"?`)) return;
+      try {
+        const res = await fetch(`${API_BASE}/documents/${id}`, {
+          method: "DELETE",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (res.ok) {
+          closeModal();
+          if (activeTab === "notices") renderNoticesScreen();
+          else if (activeTab === "resources") fetchResources();
+        } else {
+          const data = await res.json();
+          alert(data.detail || "Failed to delete document.");
+        }
+      } catch (e) {
+        alert("Server error while deleting document.");
       }
     }
 
@@ -1099,12 +1148,6 @@
               <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Designation</span><strong>${fac.designation}</strong></div>
             </div>
           ` : ''}
-
-          <div class="bg-white p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
-            <h4 class="font-bold text-[10px] text-slate-400 uppercase tracking-wider mb-2">Database & Cloud</h4>
-            <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Database</span><strong class="text-green-600">PostgreSQL (Neon Cloud)</strong></div>
-            <div class="flex justify-between py-1"><span class="text-slate-500">AI Model</span><strong>Google Gemini (Flash)</strong></div>
-          </div>
 
           <button onclick="handleLogout()" class="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center justify-center transition border border-red-200">
             <i data-lucide="log-out" class="w-4 h-4 mr-1.5"></i> Sign Out

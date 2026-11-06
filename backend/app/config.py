@@ -28,7 +28,10 @@ class Settings(BaseSettings):
     VECTOR_STORE_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "vector_store")
 
     class Config:
-        env_file = ".env"
+        env_file = (
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"),
+            ".env",
+        )
         env_file_encoding = "utf-8"
         case_sensitive = True
 

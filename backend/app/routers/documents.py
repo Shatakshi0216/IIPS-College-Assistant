@@ -186,3 +186,41 @@ def download_document_file(document_id: int, db: Session = Depends(get_db)):
         media_type="application/pdf",
         filename=doc.file_name
     )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_200_OK)
+def delete_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["faculty", "admin"]))
+):
+    """
+    Deletes an uploaded document, its associated metadata, notifications,
+    and the physical PDF file (Faculty/Admin only).
+    """
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # 1. Delete associated notifications
+    db.query(Notification).filter(Notification.document_id == document_id).delete(synchronize_session=False)
+
+    # 2. Delete associated notice metadata
+    db.query(NoticeMetadata).filter(NoticeMetadata.document_id == document_id).delete(synchronize_session=False)
+
+    # 3. Delete associated academic resources
+    db.query(AcademicResource).filter(AcademicResource.document_id == document_id).delete(synchronize_session=False)
+
+    # 4. Remove physical file from disk if present
+    if doc.file_path and os.path.exists(doc.file_path):
+        try:
+            os.remove(doc.file_path)
+        except Exception:
+            pass
+
+    # 5. Delete document record
+    doc_title = doc.title
+    db.delete(doc)
+    db.commit()
+
+    return {"status": "success", "message": f"Document '{doc_title}' deleted successfully."}

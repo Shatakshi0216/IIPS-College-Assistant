@@ -187,33 +187,6 @@ class ProfileScreen extends StatelessWidget {
               const SizedBox(height: 20),
             ],
 
-            // Backend Connection Info
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'SERVER CONNECTION',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1,
-                      color: Colors.grey,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _buildProfileRow('FastAPI Backend', ApiConfig.baseUrl),
-                  _buildProfileRow('Database Engine', 'PostgreSQL (Cloud Neon)'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 24),
-
             // Log Out Button
             ElevatedButton.icon(
               onPressed: () => _handleLogout(context),

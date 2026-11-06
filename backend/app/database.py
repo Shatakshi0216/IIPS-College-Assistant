@@ -28,15 +28,15 @@ try:
         with test_engine.connect() as test_conn:
             pass
         engine = test_engine
-        print("✅ Connected to Cloud PostgreSQL (Neon)")
+        print("[OK] Connected to Cloud PostgreSQL (Neon)")
     else:
         engine = create_engine(db_url, connect_args=connect_args)
 except Exception as e:
-    print(f"⚠️ Cloud PostgreSQL unreachable (offline or DNS error). Falling back to local SQLite.")
+    print(f"[WARNING] Cloud PostgreSQL unreachable. Falling back to local SQLite. ({type(e).__name__})")
     db_url = "sqlite:///./college_assistant.db"
     connect_args = {"check_same_thread": False}
     engine = create_engine(db_url, connect_args=connect_args)
-    print("✅ Running on local SQLite database (college_assistant.db)")
+    print("[OK] Running on local SQLite database (college_assistant.db)")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

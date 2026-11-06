@@ -22,6 +22,77 @@ from app.routers import (
 # 1. Create database tables on application startup
 Base.metadata.create_all(bind=engine)
 
+def init_production_db():
+    """
+    Cleans up initial mock data and provisions the official IIPS DAVV Master Admin.
+    """
+    from app.database import SessionLocal
+    from app.models.user import User, StudentProfile, FacultyProfile
+    from app.models.document import Document, NoticeMetadata, AcademicResource
+    from app.models.notification import Notification
+    from app.services.auth_service import get_password_hash
+
+    db = SessionLocal()
+    try:
+        # 1. Clean up mock/test documents and notices
+        mock_keywords = ["Sports", "Operating Systems", "TCS", "Attendance"]
+        for kw in mock_keywords:
+            mock_docs = db.query(Document).filter(Document.title.ilike(f"%{kw}%")).all()
+            for doc in mock_docs:
+                db.query(Notification).filter(Notification.document_id == doc.id).delete(synchronize_session=False)
+                db.query(NoticeMetadata).filter(NoticeMetadata.document_id == doc.id).delete(synchronize_session=False)
+                db.query(AcademicResource).filter(AcademicResource.document_id == doc.id).delete(synchronize_session=False)
+                if doc.file_path and os.path.exists(doc.file_path):
+                    try:
+                        os.remove(doc.file_path)
+                    except Exception:
+                        pass
+                db.delete(doc)
+
+        # 2. Clean up sample dummy users
+        mock_emails = ["faculty@college.edu", "student@college.edu", "me_student@college.edu"]
+        mock_users = db.query(User).filter(User.email.in_(mock_emails)).all()
+        for u in mock_users:
+            db.query(StudentProfile).filter(StudentProfile.user_id == u.id).delete(synchronize_session=False)
+            db.query(FacultyProfile).filter(FacultyProfile.user_id == u.id).delete(synchronize_session=False)
+            db.delete(u)
+
+        # 3. Create official Master Admin account for IIPS DAVV if not exists
+        admin_email = "admin@iips.davv.ac.in"
+        existing_admin = db.query(User).filter(User.email == admin_email).first()
+        if not existing_admin:
+            admin_user = User(
+                email=admin_email,
+                hashed_password=get_password_hash("Admin@IIPS2026"),
+                full_name="IIPS DAVV Administrator",
+                role="faculty",
+                is_active=True
+            )
+            db.add(admin_user)
+            db.flush()
+
+            admin_profile = FacultyProfile(
+                user_id=admin_user.id,
+                employee_id="IIPS-ADM-01",
+                department="Academic & Examination Affairs",
+                designation="Director / Chief Coordinator"
+            )
+            db.add(admin_profile)
+            print(f"[OK] Master Admin created: {admin_email} / Admin@IIPS2026")
+
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"[WARNING] Database initialization note: {e}")
+    finally:
+        db.close()
+
+# Run initialization
+try:
+    init_production_db()
+except Exception as e:
+    print(f"[WARNING] Startup init deferred: {e}")
+
 # Ensure upload and vector directories exist
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
 os.makedirs(os.path.join(settings.UPLOAD_DIR, "notices"), exist_ok=True)
