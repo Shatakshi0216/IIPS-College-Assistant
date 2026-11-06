@@ -1,0 +1,43 @@
+name: college_assistant
+description: "AI-Powered College Information & Notice Assistant Mobile Application"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Networking & REST API
+  http: ^1.2.0
+
+  # Local Token & Session Storage
+  shared_preferences: ^2.2.2
+
+  # Markdown rendering for AI Chat answers
+  flutter_markdown: ^0.6.22
+
+  # File picker for Faculty PDF upload
+  file_picker: ^8.0.0
+
+  # Formatting dates & numbers
+  intl: ^0.19.0
+
+  # Modern clean typography
+  google_fonts: ^6.1.0
+
+  # Open PDF links in browser / external viewer
+  url_launcher: ^6.2.5
+
+  # Cupertino icons
+  cupertino_icons: ^1.0.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

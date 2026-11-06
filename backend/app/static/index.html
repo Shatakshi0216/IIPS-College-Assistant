@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>IIPS DAVV - College Information & Notice Assistant</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Marked.js for Markdown in AI Chat -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* Mobile Frame Styling */
+    body {
+      background-color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .mobile-screen {
+      width: 100%;
+      max-width: 420px;
+      height: 100vh;
+      max-height: 880px;
+      border-radius: 36px;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 0 10px #1e293b;
+      display: flex;
+      flex-direction: column;
+      background-color: #f8fafc;
+      position: relative;
+    }
+    @media (max-width: 480px) {
+      .mobile-screen {
+        max-width: 100%;
+        height: 100vh;
+        max-height: 100vh;
+        border-radius: 0;
+        box-shadow: none;
+      }
+      body {
+        background-color: #f8fafc;
+      }
+    }
+    /* Hide scrollbars but keep scrolling */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="flex items-center justify-center min-h-screen p-0 sm:p-4">
+
+  <!-- Mobile Device Shell -->
+  <div class="mobile-screen">
+    
+    <!-- Top Status Bar -->
+    <div class="bg-white px-6 pt-3 pb-1 flex justify-between items-center text-xs font-semibold text-slate-800 border-b border-slate-100 select-none z-10">
+      <span id="status-time">9:41</span>
+      <div class="flex items-center space-x-1.5 text-slate-700">
+        <i data-lucide="signal" class="w-3.5 h-3.5"></i>
+        <i data-lucide="wifi" class="w-3.5 h-3.5"></i>
+        <i data-lucide="battery-charging" class="w-4 h-4"></i>
+      </div>
+    </div>
+
+    <!-- Screen Container -->
+    <div id="app-content" class="flex-1 overflow-y-auto no-scrollbar relative flex flex-col">
+      <!-- Dynamic Views Rendered Here -->
+    </div>
+
+    <!-- Bottom Navigation Bar (Visible when logged in) -->
+    <nav id="bottom-nav" class="hidden bg-white border-t border-slate-200 px-3 py-2 flex justify-around items-center select-none z-20">
+      <button onclick="navigate('notices')" class="nav-item flex flex-col items-center py-1 px-2 text-blue-600" data-tab="notices">
+        <i data-lucide="newspaper" class="w-5 h-5 mb-0.5"></i>
+        <span class="text-[10px] font-medium">Notices</span>
+      </button>
+      <button onclick="navigate('resources')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="resources">
+        <i data-lucide="book-open" class="w-5 h-5 mb-0.5"></i>
+        <span class="text-[10px] font-medium">Resources</span>
+      </button>
+      <button onclick="navigate('chat')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="chat">
+        <div class="relative">
+          <i data-lucide="bot" class="w-5 h-5 mb-0.5"></i>
+          <span class="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
+        </div>
+        <span class="text-[10px] font-medium">AI Chat</span>
+      </button>
+      <button id="nav-action-btn" onclick="navigate('action')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="action">
+        <i data-lucide="bell" id="nav-action-icon" class="w-5 h-5 mb-0.5"></i>
+        <span id="nav-action-label" class="text-[10px] font-medium">Alerts</span>
+      </button>
+      <button onclick="navigate('profile')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="profile">
+        <i data-lucide="user" class="w-5 h-5 mb-0.5"></i>
+        <span class="text-[10px] font-medium">Profile</span>
+      </button>
+    </nav>
+
+  </div>
+
+  <!-- Global Modal Container -->
+  <div id="modal-container" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="modal-content" class="bg-white w-full max-w-md rounded-t-3xl sm:rounded-2xl max-h-[85vh] overflow-y-auto p-6 shadow-2xl relative">
+      <!-- Modal dynamically populated -->
+    </div>
+  </div>
+
+  <script>
+    // State Management
+    const API_BASE = window.location.origin + "/api/v1";
+    let currentUser = null;
+    let token = localStorage.getItem("jwt_token") || null;
+    let activeTab = "notices";
+
+    // Update Top Clock
+    function updateClock() {
+      const now = new Date();
+      document.getElementById("status-time").textContent = 
+        now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // App Initialization
+    async function init() {
+      if (token) {
+        try {
+          const res = await fetch(`${API_BASE}/auth/me`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          if (res.ok) {
+            currentUser = await res.json();
+            showMainApp();
+            return;
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      showLoginScreen();
+    }
+
+    // Navigation Handler
+    function navigate(tab) {
+      activeTab = tab;
+      document.querySelectorAll(".nav-item").forEach(el => {
+        if (el.dataset.tab === tab) {
+          el.className = "nav-item flex flex-col items-center py-1 px-2 text-blue-600";
+        } else {
+          el.className = "nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600";
+        }
+      });
+
+      if (tab === "notices") renderNoticesScreen();
+      else if (tab === "resources") renderResourcesScreen();
+      else if (tab === "chat") renderChatScreen();
+      else if (tab === "action") {
+        if (currentUser && (currentUser.role === "faculty" || currentUser.role === "admin")) {
+          renderUploadScreen();
+        } else {
+          renderNotificationsScreen();
+        }
+      } else if (tab === "profile") renderProfileScreen();
+    }
+
+    function showMainApp() {
+      document.getElementById("bottom-nav").classList.remove("hidden");
+      const isFaculty = currentUser.role === "faculty" || currentUser.role === "admin";
+      
+      const actionIcon = document.getElementById("nav-action-icon");
+      const actionLabel = document.getElementById("nav-action-label");
+      if (isFaculty) {
+        actionIcon.setAttribute("data-lucide", "upload-cloud");
+        actionLabel.textContent = "Upload";
+      } else {
+        actionIcon.setAttribute("data-lucide", "bell");
+        actionLabel.textContent = "Alerts";
+      }
+      lucide.createIcons();
+      navigate("notices");
+    }
+
+    // =========================================================================
+    // SCREEN 1: LOGIN & REGISTRATION
+    // =========================================================================
+    function showLoginScreen() {
+      document.getElementById("bottom-nav").classList.add("hidden");
+      const container = document.getElementById("app-content");
+      container.innerHTML = `
+        <div class="flex-1 p-6 flex flex-col justify-center">
+          <div class="text-center mb-8">
+            <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-sm">
+              <i data-lucide="graduation-cap" class="w-8 h-8"></i>
+            </div>
+            <h1 class="text-xl font-bold text-slate-900 tracking-tight">IIPS DAVV</h1>
+            <p class="text-[11px] text-blue-600 font-semibold mt-0.5">International Institute of Professional Studies</p>
+            <p class="text-[10px] text-slate-500">Devi Ahilya Vishwavidyalaya, Indore</p>
+          </div>
+
+          <div id="auth-error" class="hidden mb-4 p-3 bg-red-50 border border-red-200 text-red-600 text-xs rounded-xl flex items-center">
+            <i data-lucide="alert-circle" class="w-4 h-4 mr-2 shrink-0"></i>
+            <span id="auth-error-msg"></span>
+          </div>
+
+          <form onsubmit="handleLogin(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Official Email</label>
+              <input id="login-email" type="email" required placeholder="your.name@iips.edu.in" 
+                     class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+              <input id="login-password" type="password" required placeholder="••••••••" 
+                     class="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <button type="submit" id="login-btn" class="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition shadow-md shadow-blue-500/20">
+              Sign In
+            </button>
+          </form>
+
+          <p class="text-center text-xs text-slate-500 mt-6">
+            New to IIPS? <a href="#" onclick="showRegisterScreen()" class="text-blue-600 font-semibold hover:underline">Create an Account</a>
+          </p>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function quickFill(email, pwd) {
+      document.getElementById("login-email").value = email;
+      document.getElementById("login-password").value = pwd;
+    }
+
+    async function handleLogin(e) {
+      e.preventDefault();
+      const email = document.getElementById("login-email").value.trim();
+      const password = document.getElementById("login-password").value;
+      const btn = document.getElementById("login-btn");
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span> Signing in...`;
+
+      try {
+        const res = await fetch(`${API_BASE}/auth/login-json`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          token = data.access_token;
+          localStorage.setItem("jwt_token", token);
+          // fetch me
+          const meRes = await fetch(`${API_BASE}/auth/me`, {
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+          currentUser = await meRes.json();
+          showMainApp();
+        } else {
+          showAuthError(data.detail || "Invalid email or password");
+        }
+      } catch (err) {
+        showAuthError("Server unreachable. Please check backend is running.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Sign In";
+      }
+    }
+
+    function showAuthError(msg) {
+      const box = document.getElementById("auth-error");
+      document.getElementById("auth-error-msg").textContent = msg;
+      box.classList.remove("hidden");
+    }
+
+    function showRegisterScreen() {
+      const container = document.getElementById("app-content");
+      container.innerHTML = `
+        <div class="flex-1 p-6 overflow-y-auto no-scrollbar">
+          <button onclick="showLoginScreen()" class="text-xs text-slate-500 hover:text-slate-800 flex items-center mb-4">
+            <i data-lucide="arrow-left" class="w-4 h-4 mr-1"></i> Back to Login
+          </button>
+          <h2 class="text-xl font-bold text-slate-900 mb-1">Create Account</h2>
+          <p class="text-xs text-slate-500 mb-5">Register as Student or Faculty</p>
+
+          <form onsubmit="handleRegister(event)" class="space-y-3.5">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Role</label>
+              <select id="reg-role" onchange="toggleRegRole(this.value)" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-blue-500">
+                <option value="student">Student</option>
+                <option value="faculty">Faculty / Admin</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Full Name</label>
+              <input id="reg-name" required placeholder="Aarav Patel" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Email</label>
+              <input id="reg-email" type="email" required placeholder="student@college.edu" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Password</label>
+              <input id="reg-password" type="password" minlength="6" required placeholder="Min 6 characters" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+            </div>
+
+            <!-- Student Fields -->
+            <div id="student-fields" class="space-y-3 pt-2 border-t border-slate-100">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Branch / Course</label>
+                  <select id="reg-branch" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                    <option value="MCA">MCA</option>
+                    <option value="M.Tech">M.Tech (IT)</option>
+                    <option value="MBA (MS)">MBA (MS)</option>
+                    <option value="MBA (TA)">MBA (TA)</option>
+                    <option value="BCA">BCA</option>
+                    <option value="B.Com">B.Com (Hons)</option>
+                    <option value="IT">IT</option>
+                    <option value="CSE">CSE</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Year</label>
+                  <select id="reg-year" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                    <option value="1">1st Year</option>
+                    <option value="2">2nd Year</option>
+                    <option value="3">3rd Year</option>
+                    <option value="4" selected>4th Year</option>
+                  </select>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Semester</label>
+                  <select id="reg-semester" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                    <option value="1">Sem 1</option>
+                    <option value="2">Sem 2</option>
+                    <option value="3">Sem 3</option>
+                    <option value="4">Sem 4</option>
+                    <option value="5">Sem 5</option>
+                    <option value="6">Sem 6</option>
+                    <option value="7" selected>Sem 7</option>
+                    <option value="8">Sem 8</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">CGPA (0 - 10)</label>
+                  <input id="reg-cgpa" type="number" step="0.01" value="8.0" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                </div>
+              </div>
+            </div>
+
+            <!-- Faculty Fields -->
+            <div id="faculty-fields" class="hidden space-y-3 pt-2 border-t border-slate-100">
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Department</label>
+                <input id="reg-dept" placeholder="Computer Science & Engineering" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Designation</label>
+                <input id="reg-desig" placeholder="Assistant Professor" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+              </div>
+            </div>
+
+            <button type="submit" class="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition mt-2">
+              Create Account
+            </button>
+          </form>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function toggleRegRole(role) {
+      if (role === "student") {
+        document.getElementById("student-fields").classList.remove("hidden");
+        document.getElementById("faculty-fields").classList.add("hidden");
+      } else {
+        document.getElementById("student-fields").classList.add("hidden");
+        document.getElementById("faculty-fields").classList.remove("hidden");
+      }
+    }
+
+    async function handleRegister(e) {
+      e.preventDefault();
+      const role = document.getElementById("reg-role").value;
+      const email = document.getElementById("reg-email").value.trim();
+      const password = document.getElementById("reg-password").value;
+      const full_name = document.getElementById("reg-name").value.trim();
+
+      let student_profile = null;
+      let faculty_profile = null;
+
+      if (role === "student") {
+        student_profile = {
+          branch: document.getElementById("reg-branch").value,
+          year: parseInt(document.getElementById("reg-year").value),
+          semester: parseInt(document.getElementById("reg-semester").value),
+          cgpa: parseFloat(document.getElementById("reg-cgpa").value) || 0.0
+        };
+      } else {
+        faculty_profile = {
+          department: document.getElementById("reg-dept").value || "General",
+          designation: document.getElementById("reg-desig").value || "Faculty"
+        };
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/auth/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, full_name, role, student_profile, faculty_profile })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          // Auto login
+          const logRes = await fetch(`${API_BASE}/auth/login-json`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password })
+          });
+          const logData = await logRes.json();
+          token = logData.access_token;
+          localStorage.setItem("jwt_token", token);
+          currentUser = data;
+          showMainApp();
+        } else {
+          alert(data.detail || "Registration failed");
+        }
+      } catch (err) {
+        alert("Server error during registration");
+      }
+    }
+
+    // =========================================================================
+    // SCREEN 2: PERSONALIZED NOTICES FEED (FR-04)
+    // =========================================================================
+    async function renderNoticesScreen() {
+      const container = document.getElementById("app-content");
+      container.innerHTML = `
+        <div class="bg-white px-5 py-3 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
+          <div>
+            <h1 class="text-base font-bold text-slate-900">College Notices</h1>
+            <p class="text-[11px] text-slate-500">${currentUser.role === 'student' && currentUser.student_profile ? 'Personalized for ' + currentUser.student_profile.branch + ' • Year ' + currentUser.student_profile.year : 'All Official Notices'}</p>
+          </div>
+          <button onclick="renderNoticesScreen()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="p-4 space-y-3 flex-1 overflow-y-auto no-scrollbar" id="notices-list">
+          <div class="text-center py-10 text-slate-400 text-xs">
+            <span class="animate-spin inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full mb-2"></span>
+            <p>Loading personalized notices...</p>
+          </div>
+        </div>
+      `;
+      lucide.createIcons();
+
+      try {
+        const res = await fetch(`${API_BASE}/notices/feed`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const notices = await res.json();
+        const listContainer = document.getElementById("notices-list");
+
+        if (!notices.length) {
+          listContainer.innerHTML = `
+            <div class="text-center py-16 text-slate-400">
+              <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-2 text-slate-300"></i>
+              <p class="text-sm font-medium">No notices found</p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        listContainer.innerHTML = notices.map(doc => {
+          const m = doc.notice_metadata;
+          return `
+            <div onclick='openNoticeModal(${JSON.stringify(doc).replace(/'/g, "&apos;")})' 
+                 class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition cursor-pointer active:scale-[0.99]">
+              <div class="flex items-center justify-between mb-2">
+                <span class="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-bold rounded-md uppercase tracking-wider">
+                  ${doc.category}
+                </span>
+                ${m && m.is_urgent ? `
+                  <span class="px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-bold rounded-md flex items-center">
+                    <i data-lucide="zap" class="w-3 h-3 mr-0.5"></i> Urgent
+                  </span>
+                ` : ''}
+              </div>
+              <h3 class="text-sm font-bold text-slate-900 leading-snug mb-1.5">${doc.title}</h3>
+              ${m && m.summary ? `
+                <p class="text-xs text-slate-600 line-clamp-2 leading-relaxed mb-3">${m.summary}</p>
+              ` : ''}
+
+              <div class="flex flex-wrap gap-1.5 text-[11px] text-slate-500 pt-2 border-t border-slate-100">
+                ${m && m.deadline ? `
+                  <span class="flex items-center text-red-600 font-semibold bg-red-50 px-2 py-0.5 rounded">
+                    <i data-lucide="calendar" class="w-3 h-3 mr-1"></i> ${m.deadline}
+                  </span>
+                ` : ''}
+                ${m && m.eligible_branches && m.eligible_branches.length ? `
+                  <span class="bg-slate-100 px-2 py-0.5 rounded text-slate-700">
+                    Branches: ${m.eligible_branches.join(', ')}
+                  </span>
+                ` : ''}
+                ${m && m.min_cgpa > 0 ? `
+                  <span class="bg-purple-50 text-purple-700 font-medium px-2 py-0.5 rounded">
+                    Min CGPA: ${m.min_cgpa}
+                  </span>
+                ` : ''}
+              </div>
+            </div>
+          `;
+        }).join("");
+        lucide.createIcons();
+      } catch (e) {
+        document.getElementById("notices-list").innerHTML = `<p class="text-center text-red-500 text-xs py-10">Error loading notices.</p>`;
+      }
+    }
+
+    function openNoticeModal(doc) {
+      const m = doc.notice_metadata;
+      const modal = document.getElementById("modal-container");
+      const content = document.getElementById("modal-content");
+
+      content.innerHTML = `
+        <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+
+        <span class="px-2.5 py-1 bg-blue-100 text-blue-800 text-[10px] font-bold rounded-lg uppercase">
+          ${doc.category}
+        </span>
+        <h2 class="text-base font-bold text-slate-900 mt-2 mb-3">${doc.title}</h2>
+
+        ${m && m.summary ? `
+          <div class="mb-4">
+            <h4 class="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1">AI Summary</h4>
+            <div class="p-3 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 leading-relaxed">
+              ${m.summary}
+            </div>
+          </div>
+        ` : ''}
+
+        ${m && m.action_required ? `
+          <div class="mb-4">
+            <h4 class="text-[10px] font-bold tracking-wider text-slate-400 uppercase mb-1">Required Action</h4>
+            <div class="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs leading-relaxed flex items-start">
+              <i data-lucide="check-circle" class="w-4 h-4 mr-2 text-amber-600 shrink-0 mt-0.5"></i>
+              <span>${m.action_required}</span>
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="space-y-1.5 text-xs text-slate-600 mb-6 bg-slate-50 p-3 rounded-xl">
+          ${m && m.deadline ? `<p><strong class="text-slate-900">Deadline:</strong> <span class="text-red-600 font-semibold">${m.deadline}</span></p>` : ''}
+          ${m && m.eligible_branches ? `<p><strong class="text-slate-900">Eligible Branches:</strong> ${m.eligible_branches.join(", ")}</p>` : ''}
+          ${m && m.min_cgpa > 0 ? `<p><strong class="text-slate-900">Minimum CGPA:</strong> ${m.min_cgpa}</p>` : ''}
+          ${m && m.contact_info ? `<p><strong class="text-slate-900">Contact:</strong> ${m.contact_info}</p>` : ''}
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <a href="${API_BASE}/documents/${doc.id}/file" target="_blank" 
+             class="py-2.5 px-3 bg-blue-600 text-white rounded-xl text-xs font-semibold flex items-center justify-center hover:bg-blue-700 transition">
+            <i data-lucide="file-text" class="w-4 h-4 mr-1.5"></i> Open PDF
+          </a>
+          <button onclick="askAboutNotice('${doc.title.replace(/'/g, "")}')" 
+                  class="py-2.5 px-3 bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-xs font-semibold flex items-center justify-center hover:bg-purple-100 transition">
+            <i data-lucide="message-square" class="w-4 h-4 mr-1.5"></i> Ask AI
+          </button>
+        </div>
+      `;
+      modal.classList.remove("hidden");
+      lucide.createIcons();
+    }
+
+    function closeModal() {
+      document.getElementById("modal-container").classList.add("hidden");
+    }
+
+    function askAboutNotice(title) {
+      closeModal();
+      navigate("chat");
+      setTimeout(() => {
+        document.getElementById("chat-input").value = `Tell me more details about "${title}"`;
+        handleSendMessage();
+      }, 300);
+    }
+
+    // =========================================================================
+    // SCREEN 3: ACADEMIC RESOURCES (FR-05)
+    // =========================================================================
+    async function renderResourcesScreen() {
+      const container = document.getElementById("app-content");
+      const stBranch = (currentUser.student_profile && currentUser.student_profile.branch) || "ALL";
+
+      container.innerHTML = `
+        <div class="bg-white px-5 py-3 border-b border-slate-100 sticky top-0 z-10">
+          <h1 class="text-base font-bold text-slate-900">Academic Resources</h1>
+          <p class="text-[11px] text-slate-500">Syllabi & Previous-Year Exam Papers</p>
+          
+          <div class="grid grid-cols-2 gap-2 mt-2.5">
+            <select id="res-branch" onchange="fetchResources()" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+              <option value="ALL">All Branches</option>
+              <option value="CSE" ${stBranch === 'CSE' ? 'selected' : ''}>CSE</option>
+              <option value="IT" ${stBranch === 'IT' ? 'selected' : ''}>IT</option>
+              <option value="ECE" ${stBranch === 'ECE' ? 'selected' : ''}>ECE</option>
+              <option value="ME" ${stBranch === 'ME' ? 'selected' : ''}>ME</option>
+              <option value="CE" ${stBranch === 'CE' ? 'selected' : ''}>CE</option>
+            </select>
+            <select id="res-sem" onchange="fetchResources()" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+              <option value="0">All Semesters</option>
+              <option value="1">Sem 1</option>
+              <option value="2">Sem 2</option>
+              <option value="3">Sem 3</option>
+              <option value="4">Sem 4</option>
+              <option value="5" selected>Sem 5</option>
+              <option value="6">Sem 6</option>
+              <option value="7">Sem 7</option>
+              <option value="8">Sem 8</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="p-4 space-y-3 flex-1 overflow-y-auto no-scrollbar" id="resources-list">
+          <div class="text-center py-10 text-slate-400 text-xs">Loading resources...</div>
+        </div>
+      `;
+      lucide.createIcons();
+      fetchResources();
+    }
+
+    async function fetchResources() {
+      const branch = document.getElementById("res-branch").value;
+      const sem = document.getElementById("res-sem").value;
+      const listContainer = document.getElementById("resources-list");
+
+      try {
+        let url = `${API_BASE}/resources?`;
+        if (branch !== "ALL") url += `branch=${branch}&`;
+        if (sem !== "0") url += `semester=${sem}&`;
+
+        const res = await fetch(url);
+        const docs = await res.json();
+
+        if (!docs.length) {
+          listContainer.innerHTML = `
+            <div class="text-center py-16 text-slate-400">
+              <i data-lucide="book" class="w-10 h-10 mx-auto mb-2 text-slate-300"></i>
+              <p class="text-xs">No resources found for selected filters</p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        listContainer.innerHTML = docs.map(doc => {
+          const r = doc.academic_resource;
+          return `
+            <div class="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm">
+              <div class="flex justify-between items-center mb-1.5">
+                <span class="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold text-[10px] rounded uppercase">
+                  ${doc.category.replace('_', ' ')}
+                </span>
+                ${r && r.exam_year ? `<span class="text-[10px] text-slate-400">Exam: ${r.exam_year}</span>` : ''}
+              </div>
+              <h3 class="text-sm font-bold text-slate-900 mb-1">${doc.title}</h3>
+              ${r ? `<p class="text-xs text-slate-500 mb-3">${r.branch} • Sem ${r.semester} ${r.subject_code ? '• ' + r.subject_code : ''}</p>` : ''}
+              
+              <div class="flex gap-2 pt-2 border-t border-slate-100">
+                <a href="${API_BASE}/documents/${doc.id}/file" target="_blank" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg text-center flex items-center justify-center">
+                  <i data-lucide="file-down" class="w-3.5 h-3.5 mr-1"></i> Open PDF
+                </a>
+                <button onclick="summarizeDoc(${doc.id}, '${doc.title}')" class="flex-1 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-semibold rounded-lg flex items-center justify-center">
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5 mr-1"></i> AI Summary
+                </button>
+              </div>
+            </div>
+          `;
+        }).join("");
+        lucide.createIcons();
+      } catch (e) {
+        listContainer.innerHTML = `<p class="text-center text-red-500 text-xs py-10">Error loading resources.</p>`;
+      }
+    }
+
+    async function summarizeDoc(id, title) {
+      const modal = document.getElementById("modal-container");
+      const content = document.getElementById("modal-content");
+      content.innerHTML = `
+        <div class="text-center py-8">
+          <span class="animate-spin inline-block w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full mb-3"></span>
+          <p class="text-xs font-semibold text-slate-700">Generating AI Summary with Gemini...</p>
+        </div>
+      `;
+      modal.classList.remove("hidden");
+
+      try {
+        const res = await fetch(`${API_BASE}/chat/summarize/${id}`);
+        const data = await res.json();
+        content.innerHTML = `
+          <button onclick="closeModal()" class="absolute top-4 right-4 text-slate-400 hover:text-slate-700">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+          <div class="flex items-center text-purple-600 mb-2">
+            <i data-lucide="sparkles" class="w-4 h-4 mr-1.5"></i>
+            <span class="text-xs font-bold uppercase tracking-wider">AI Document Summary</span>
+          </div>
+          <h2 class="text-sm font-bold text-slate-900 mb-3">${title}</h2>
+          <div class="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100 whitespace-pre-line mb-4">
+            ${data.summary}
+          </div>
+          <button onclick="closeModal()" class="w-full py-2.5 bg-slate-800 text-white text-xs font-semibold rounded-xl">
+            Close
+          </button>
+        `;
+        lucide.createIcons();
+      } catch (e) {
+        content.innerHTML = `<p class="text-red-500 text-xs">Failed to generate summary.</p>`;
+      }
+    }
+
+    // =========================================================================
+    // SCREEN 4: RAG AI ASSISTANT CHAT (FR-06 & FR-07)
+    // =========================================================================
+    let chatMessages = [
+      {
+        role: "assistant",
+        text: "Hello! I am your AI College Assistant. I answer questions grounded strictly in official college documents. Ask me about attendance requirements, placement drives, syllabus, or rules!",
+        sources: []
+      }
+    ];
+
+    function renderChatScreen() {
+      const container = document.getElementById("app-content");
+      container.innerHTML = `
+        <div class="bg-white px-5 py-3 border-b border-slate-100 flex items-center space-x-2.5 sticky top-0 z-10">
+          <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs">
+            <i data-lucide="bot" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h1 class="text-sm font-bold text-slate-900">AI College Assistant</h1>
+            <p class="text-[10px] text-green-600 font-medium flex items-center">
+              <span class="w-1.5 h-1.5 bg-green-500 rounded-full mr-1"></span> Grounded in College Documents
+            </p>
+          </div>
+        </div>
+
+        <!-- Quick Prompts -->
+        <div class="px-4 py-2 bg-slate-50 border-b border-slate-100 overflow-x-auto no-scrollbar flex space-x-2">
+          <button onclick="sendQuickPrompt('What is the attendance requirement?')" class="text-[11px] bg-white border border-slate-200 px-2.5 py-1 rounded-full whitespace-nowrap text-slate-600 hover:border-blue-400">
+            📋 Attendance Rules
+          </button>
+          <button onclick="sendQuickPrompt('When is the TCS placement deadline?')" class="text-[11px] bg-white border border-slate-200 px-2.5 py-1 rounded-full whitespace-nowrap text-slate-600 hover:border-blue-400">
+            💼 TCS Placement Deadline
+          </button>
+          <button onclick="sendQuickPrompt('Who is eligible for campus placement?')" class="text-[11px] bg-white border border-slate-200 px-2.5 py-1 rounded-full whitespace-nowrap text-slate-600 hover:border-blue-400">
+            🎯 Placement Criteria
+          </button>
+        </div>
+
+        <!-- Messages Area -->
+        <div id="chat-messages" class="flex-1 p-4 space-y-3 overflow-y-auto no-scrollbar">
+          <!-- Populated dynamically -->
+        </div>
+
+        <!-- Input Box -->
+        <div class="p-3 bg-white border-t border-slate-200">
+          <form onsubmit="handleSendMessage(event)" class="flex items-center space-x-2">
+            <input id="chat-input" placeholder="Ask anything about college circulars..." 
+                   class="flex-1 px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+            <button type="submit" id="chat-send-btn" class="w-9 h-9 bg-blue-600 text-white rounded-xl flex items-center justify-center hover:bg-blue-700 transition">
+              <i data-lucide="send" class="w-4 h-4"></i>
+            </button>
+          </form>
+        </div>
+      `;
+      lucide.createIcons();
+      updateChatUI();
+    }
+
+    function updateChatUI() {
+      const box = document.getElementById("chat-messages");
+      if (!box) return;
+
+      box.innerHTML = chatMessages.map(m => {
+        const isUser = m.role === "user";
+        return `
+          <div class="flex ${isUser ? 'justify-end' : 'justify-start'}">
+            <div class="max-w-[85%] rounded-2xl p-3 text-xs ${isUser ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white border border-slate-200 text-slate-800 rounded-bl-none shadow-sm'}">
+              <div class="prose prose-xs">${isUser ? m.text : marked.parse(m.text)}</div>
+              ${m.sources && m.sources.length ? `
+                <div class="mt-2.5 pt-2 border-t border-slate-100 text-[10px]">
+                  <p class="font-bold text-blue-600 flex items-center mb-1">
+                    <i data-lucide="check-circle" class="w-3 h-3 mr-1"></i> Verified Sources Cited:
+                  </p>
+                  ${m.sources.map(s => `
+                    <div class="bg-blue-50/60 p-1.5 rounded mt-1 text-slate-700">
+                      <strong>${s.document_title}:</strong> "${s.snippet}"
+                    </div>
+                  `).join("")}
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      lucide.createIcons();
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function sendQuickPrompt(prompt) {
+      document.getElementById("chat-input").value = prompt;
+      handleSendMessage();
+    }
+
+    async function handleSendMessage(e) {
+      if (e) e.preventDefault();
+      const input = document.getElementById("chat-input");
+      const query = input.value.trim();
+      if (!query) return;
+
+      chatMessages.push({ role: "user", text: query });
+      input.value = "";
+      updateChatUI();
+
+      // Placeholder loading
+      chatMessages.push({ role: "assistant", text: "Searching official documents & reasoning with Gemini...", sources: [] });
+      updateChatUI();
+
+      try {
+        const res = await fetch(`${API_BASE}/chat/ask`, {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify({ query })
+        });
+        const data = await res.json();
+        chatMessages.pop(); // remove loading
+        chatMessages.push({
+          role: "assistant",
+          text: data.answer || "No response received.",
+          sources: data.sources || []
+        });
+      } catch (err) {
+        chatMessages.pop();
+        chatMessages.push({ role: "assistant", text: "Error connecting to AI service.", sources: [] });
+      }
+      updateChatUI();
+    }
+
+    // =========================================================================
+    // SCREEN 5: DOCUMENT UPLOAD (FACULTY ONLY - FR-02 & FR-03)
+    // =========================================================================
+    function renderUploadScreen() {
+      const container = document.getElementById("app-content");
+      container.innerHTML = `
+        <div class="bg-white px-5 py-3 border-b border-slate-100 sticky top-0 z-10">
+          <h1 class="text-base font-bold text-slate-900">Upload Official Document</h1>
+          <p class="text-[11px] text-slate-500">FastAPI → Gemini AI JSON Extraction → RAG Indexing</p>
+        </div>
+
+        <div class="p-5 overflow-y-auto no-scrollbar flex-1">
+          <form onsubmit="handleUpload(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Select PDF File</label>
+              <input id="up-file" type="file" accept=".pdf" required 
+                     class="w-full text-xs text-slate-500 file:mr-2 file:py-2 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Document Title</label>
+              <input id="up-title" required placeholder="e.g. TCS Campus Recruitment Drive 2026" 
+                     class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+            </div>
+
+            <div>
+              <label class="block text-xs font-semibold text-slate-700 mb-1">Category</label>
+              <select id="up-cat" onchange="toggleUploadAcademic(this.value)" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                <option value="notice">Official Notice</option>
+                <option value="syllabus">Syllabus</option>
+                <option value="question_paper">Question Paper</option>
+                <option value="rule">Academic Rule / Regulation</option>
+              </select>
+            </div>
+
+            <!-- Academic extra fields -->
+            <div id="up-academic-fields" class="hidden space-y-3 pt-3 border-t border-slate-100">
+              <div class="grid grid-cols-2 gap-2">
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Branch</label>
+                  <select id="up-branch" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                    <option value="CSE">CSE</option>
+                    <option value="IT">IT</option>
+                    <option value="ECE">ECE</option>
+                    <option value="ME">ME</option>
+                    <option value="ALL">ALL</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-slate-700 mb-1">Semester</label>
+                  <select id="up-sem" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+                    <option value="1">Sem 1</option>
+                    <option value="2">Sem 2</option>
+                    <option value="3">Sem 3</option>
+                    <option value="4">Sem 4</option>
+                    <option value="5" selected>Sem 5</option>
+                    <option value="6">Sem 6</option>
+                    <option value="7">Sem 7</option>
+                    <option value="8">Sem 8</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-slate-700 mb-1">Subject Name</label>
+                <input id="up-subject" placeholder="Operating Systems" class="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs">
+              </div>
+            </div>
+
+            <button type="submit" id="up-btn" class="w-full py-3 bg-blue-600 text-white rounded-xl text-sm font-semibold hover:bg-blue-700 transition shadow-md shadow-blue-500/20">
+              Upload & Process with Gemini AI
+            </button>
+          </form>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function toggleUploadAcademic(cat) {
+      const box = document.getElementById("up-academic-fields");
+      if (cat === "syllabus" || cat === "question_paper") {
+        box.classList.remove("hidden");
+      } else {
+        box.classList.add("hidden");
+      }
+    }
+
+    async function handleUpload(e) {
+      e.preventDefault();
+      const fileInput = document.getElementById("up-file");
+      if (!fileInput.files.length) return alert("Please select a PDF file.");
+
+      const btn = document.getElementById("up-btn");
+      btn.disabled = true;
+      btn.innerHTML = `<span class="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full mr-2"></span> Uploading & Gemini Parsing...`;
+
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+      formData.append("title", document.getElementById("up-title").value.trim());
+      const cat = document.getElementById("up-cat").value;
+      formData.append("category", cat);
+
+      if (cat === "syllabus" || cat === "question_paper") {
+        formData.append("branch", document.getElementById("up-branch").value);
+        formData.append("semester", document.getElementById("up-sem").value);
+        formData.append("subject_name", document.getElementById("up-subject").value.trim());
+      }
+
+      try {
+        const res = await fetch(`${API_BASE}/documents/upload`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` },
+          body: formData
+        });
+        const data = await res.json();
+        if (res.ok) {
+          alert("Document uploaded successfully! Gemini has extracted structured criteria and indexed it in RAG.");
+          navigate("notices");
+        } else {
+          alert(data.detail || "Upload failed");
+        }
+      } catch (err) {
+        alert("Server error uploading file");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Upload & Process with Gemini AI";
+      }
+    }
+
+    // =========================================================================
+    // SCREEN 6: TARGETED ALERTS (STUDENT NOTIFICATIONS - FR-04)
+    // =========================================================================
+    async function renderNotificationsScreen() {
+      const container = document.getElementById("app-content");
+      container.innerHTML = `
+        <div class="bg-white px-5 py-3 border-b border-slate-100 flex justify-between items-center sticky top-0 z-10">
+          <div>
+            <h1 class="text-base font-bold text-slate-900">Targeted Alerts</h1>
+            <p class="text-[11px] text-slate-500">Notices matching your branch & CGPA</p>
+          </div>
+          <button onclick="renderNotificationsScreen()" class="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+        <div class="p-4 space-y-2.5 flex-1 overflow-y-auto no-scrollbar" id="notif-list">
+          <div class="text-center py-10 text-slate-400 text-xs">Loading alerts...</div>
+        </div>
+      `;
+      lucide.createIcons();
+
+      try {
+        const res = await fetch(`${API_BASE}/notices/notifications`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        const notifs = await res.json();
+        const listContainer = document.getElementById("notif-list");
+
+        if (!notifs.length) {
+          listContainer.innerHTML = `
+            <div class="text-center py-16 text-slate-400">
+              <i data-lucide="bell-off" class="w-10 h-10 mx-auto mb-2 text-slate-300"></i>
+              <p class="text-xs">No alerts yet</p>
+            </div>
+          `;
+          lucide.createIcons();
+          return;
+        }
+
+        listContainer.innerHTML = notifs.map(n => `
+          <div class="bg-white p-3.5 rounded-2xl border ${n.is_read ? 'border-slate-200' : 'border-blue-300 bg-blue-50/20'} shadow-sm">
+            <div class="flex items-start justify-between">
+              <div class="flex items-center space-x-2">
+                <span class="w-2 h-2 rounded-full ${n.is_read ? 'bg-slate-300' : 'bg-blue-600'}"></span>
+                <h4 class="text-xs font-bold text-slate-900">${n.title}</h4>
+              </div>
+              ${!n.is_read ? `
+                <button onclick="markNotifRead(${n.id})" class="text-[10px] text-blue-600 hover:underline">
+                  Mark read
+                </button>
+              ` : ''}
+            </div>
+            <p class="text-xs text-slate-600 mt-1 pl-4">${n.message}</p>
+          </div>
+        `).join("");
+        lucide.createIcons();
+      } catch (e) {
+        document.getElementById("notif-list").innerHTML = `<p class="text-center text-red-500 text-xs py-10">Error loading alerts.</p>`;
+      }
+    }
+
+    async function markNotifRead(id) {
+      await fetch(`${API_BASE}/notices/notifications/${id}/read`, {
+        method: "POST",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      renderNotificationsScreen();
+    }
+
+    // =========================================================================
+    // SCREEN 7: PROFILE & LOGOUT
+    // =========================================================================
+    function renderProfileScreen() {
+      const container = document.getElementById("app-content");
+      const st = currentUser.student_profile;
+      const fac = currentUser.faculty_profile;
+
+      container.innerHTML = `
+        <div class="bg-white px-5 py-3 border-b border-slate-100 sticky top-0 z-10">
+          <h1 class="text-base font-bold text-slate-900">My Profile</h1>
+          <p class="text-[11px] text-slate-500">Account & Academic Credentials</p>
+        </div>
+
+        <div class="p-5 space-y-4 flex-1 overflow-y-auto no-scrollbar">
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 text-center shadow-sm">
+            <div class="w-16 h-16 rounded-full ${currentUser.role === 'faculty' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'} flex items-center justify-center font-bold text-xl mx-auto mb-3">
+              ${currentUser.full_name ? currentUser.full_name[0].toUpperCase() : 'U'}
+            </div>
+            <h2 class="text-base font-bold text-slate-900">${currentUser.full_name}</h2>
+            <p class="text-xs text-slate-500 mb-2">${currentUser.email}</p>
+            <span class="px-2.5 py-1 ${currentUser.role === 'faculty' ? 'bg-purple-50 text-purple-700 border-purple-200' : 'bg-blue-50 text-blue-700 border-blue-200'} border text-[10px] font-bold rounded-full uppercase">
+              ${currentUser.role}
+            </span>
+          </div>
+
+          ${st ? `
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
+              <h4 class="font-bold text-[10px] text-slate-400 uppercase tracking-wider mb-2">Student Academic Profile</h4>
+              <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Branch</span><strong>${st.branch}</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Academic Year</span><strong>Year ${st.year}</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Semester</span><strong>Semester ${st.semester}</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">CGPA</span><strong class="text-blue-600">${st.cgpa} / 10.0</strong></div>
+              ${st.roll_number ? `<div class="flex justify-between py-1"><span class="text-slate-500">Roll Number</span><strong>${st.roll_number}</strong></div>` : ''}
+            </div>
+          ` : ''}
+
+          ${fac ? `
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
+              <h4 class="font-bold text-[10px] text-slate-400 uppercase tracking-wider mb-2">Faculty Details</h4>
+              <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Department</span><strong>${fac.department}</strong></div>
+              <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Designation</span><strong>${fac.designation}</strong></div>
+            </div>
+          ` : ''}
+
+          <div class="bg-white p-4 rounded-2xl border border-slate-200 text-xs space-y-2">
+            <h4 class="font-bold text-[10px] text-slate-400 uppercase tracking-wider mb-2">Database & Cloud</h4>
+            <div class="flex justify-between py-1 border-b border-slate-100"><span class="text-slate-500">Database</span><strong class="text-green-600">PostgreSQL (Neon Cloud)</strong></div>
+            <div class="flex justify-between py-1"><span class="text-slate-500">AI Model</span><strong>Google Gemini (Flash)</strong></div>
+          </div>
+
+          <button onclick="handleLogout()" class="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center justify-center transition border border-red-200">
+            <i data-lucide="log-out" class="w-4 h-4 mr-1.5"></i> Sign Out
+          </button>
+        </div>
+      `;
+      lucide.createIcons();
+    }
+
+    function handleLogout() {
+      if (confirm("Are you sure you want to sign out?")) {
+        localStorage.removeItem("jwt_token");
+        token = null;
+        currentUser = null;
+        showLoginScreen();
+      }
+    }
+
+    // Start App
+    init();
+  </script>
+</body>
+</html>

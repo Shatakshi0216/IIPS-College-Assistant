@@ -1,0 +1,41 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# Environment variables & secrets
+.env
+*.env.local
+
+# Databases & local storage
+*.sqlite3
+*.db
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/vector_store/*
+!backend/vector_store/.gitkeep
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+*.apk
+*.aab
+
+# Editor & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+.DS_Store
