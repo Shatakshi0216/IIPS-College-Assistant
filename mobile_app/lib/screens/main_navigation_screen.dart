@@ -30,16 +30,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     super.initState();
     final isFaculty = widget.user.isFaculty;
 
-    _screens = [
-      NoticeFeedScreen(user: widget.user),
-      AcademicResourcesScreen(user: widget.user),
-      AiChatScreen(user: widget.user),
-      if (isFaculty)
-        UploadScreen(user: widget.user)
-      else
+    if (isFaculty) {
+      // Faculty navigation: Notices, Upload, AI Chat, Profile
+      _screens = [
+        NoticeFeedScreen(user: widget.user),
+        UploadScreen(user: widget.user),
+        AiChatScreen(user: widget.user),
+        ProfileScreen(user: widget.user),
+      ];
+    } else {
+      // Student navigation: Notices, Resources, AI Chat, Alerts, Profile
+      _screens = [
+        NoticeFeedScreen(user: widget.user),
+        AcademicResourcesScreen(user: widget.user),
+        AiChatScreen(user: widget.user),
         NotificationsScreen(user: widget.user),
-      ProfileScreen(user: widget.user),
-    ];
+        ProfileScreen(user: widget.user),
+      ];
+    }
   }
 
   @override
@@ -55,40 +63,56 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
         selectedIndex: _currentIndex,
         onDestinationSelected: (idx) => setState(() => _currentIndex = idx),
         indicatorColor: Colors.blueAccent.withOpacity(0.18),
-        destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.feed_outlined),
-            selectedIcon: Icon(Icons.feed, color: Colors.blueAccent),
-            label: 'Notices',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.menu_book_outlined),
-            selectedIcon: Icon(Icons.menu_book, color: Colors.blueAccent),
-            label: 'Resources',
-          ),
-          const NavigationDestination(
-            icon: Icon(Icons.smart_toy_outlined),
-            selectedIcon: Icon(Icons.smart_toy, color: Colors.blueAccent),
-            label: 'AI Chat',
-          ),
-          if (isFaculty)
-            const NavigationDestination(
-              icon: Icon(Icons.cloud_upload_outlined),
-              selectedIcon: Icon(Icons.cloud_upload, color: Colors.blueAccent),
-              label: 'Upload',
-            )
-          else
-            const NavigationDestination(
-              icon: Icon(Icons.notifications_outlined),
-              selectedIcon: Icon(Icons.notifications, color: Colors.blueAccent),
-              label: 'Alerts',
-            ),
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person, color: Colors.blueAccent),
-            label: 'Profile',
-          ),
-        ],
+        destinations: isFaculty
+            ? const [
+                NavigationDestination(
+                  icon: Icon(Icons.feed_outlined),
+                  selectedIcon: Icon(Icons.feed, color: Colors.blueAccent),
+                  label: 'Notices',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.cloud_upload_outlined),
+                  selectedIcon: Icon(Icons.cloud_upload, color: Colors.blueAccent),
+                  label: 'Upload',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.smart_toy_outlined),
+                  selectedIcon: Icon(Icons.smart_toy, color: Colors.blueAccent),
+                  label: 'AI Chat',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person, color: Colors.blueAccent),
+                  label: 'Profile',
+                ),
+              ]
+            : const [
+                NavigationDestination(
+                  icon: Icon(Icons.feed_outlined),
+                  selectedIcon: Icon(Icons.feed, color: Colors.blueAccent),
+                  label: 'Notices',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.menu_book_outlined),
+                  selectedIcon: Icon(Icons.menu_book, color: Colors.blueAccent),
+                  label: 'Resources',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.smart_toy_outlined),
+                  selectedIcon: Icon(Icons.smart_toy, color: Colors.blueAccent),
+                  label: 'AI Chat',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.notifications_outlined),
+                  selectedIcon: Icon(Icons.notifications, color: Colors.blueAccent),
+                  label: 'Alerts',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.person_outline),
+                  selectedIcon: Icon(Icons.person, color: Colors.blueAccent),
+                  label: 'Profile',
+                ),
+              ],
       ),
     );
   }

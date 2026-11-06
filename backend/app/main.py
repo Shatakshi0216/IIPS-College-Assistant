@@ -144,10 +144,14 @@ app.include_router(chat_router, prefix=settings.API_V1_STR)
 @app.get("/", include_in_schema=False)
 @app.get("/app", include_in_schema=False)
 def serve_mobile_app():
-    """Serves the responsive mobile app interface for testing."""
+    """Serves the responsive mobile app interface for testing with no-cache headers."""
     index_file = os.path.join(static_dir, "index.html")
     if os.path.exists(index_file):
-        return FileResponse(index_file)
+        response = FileResponse(index_file)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
     return {
         "status": "online",
         "project": settings.PROJECT_NAME,

@@ -71,31 +71,9 @@
       <!-- Dynamic Views Rendered Here -->
     </div>
 
-    <!-- Bottom Navigation Bar (Visible when logged in) -->
+    <!-- Bottom Navigation Bar (Visible when logged in, dynamically populated by role) -->
     <nav id="bottom-nav" class="hidden bg-white border-t border-slate-200 px-3 py-2 flex justify-around items-center select-none z-20">
-      <button onclick="navigate('notices')" class="nav-item flex flex-col items-center py-1 px-2 text-blue-600" data-tab="notices">
-        <i data-lucide="newspaper" class="w-5 h-5 mb-0.5"></i>
-        <span class="text-[10px] font-medium">Notices</span>
-      </button>
-      <button onclick="navigate('resources')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="resources">
-        <i data-lucide="book-open" class="w-5 h-5 mb-0.5"></i>
-        <span class="text-[10px] font-medium">Resources</span>
-      </button>
-      <button onclick="navigate('chat')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="chat">
-        <div class="relative">
-          <i data-lucide="bot" class="w-5 h-5 mb-0.5"></i>
-          <span class="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
-        </div>
-        <span class="text-[10px] font-medium">AI Chat</span>
-      </button>
-      <button id="nav-action-btn" onclick="navigate('action')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="action">
-        <i data-lucide="bell" id="nav-action-icon" class="w-5 h-5 mb-0.5"></i>
-        <span id="nav-action-label" class="text-[10px] font-medium">Alerts</span>
-      </button>
-      <button onclick="navigate('profile')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="profile">
-        <i data-lucide="user" class="w-5 h-5 mb-0.5"></i>
-        <span class="text-[10px] font-medium">Profile</span>
-      </button>
+      <!-- Dynamic role-based navigation tabs populated by showMainApp() -->
     </nav>
 
   </div>
@@ -147,37 +125,78 @@
       activeTab = tab;
       document.querySelectorAll(".nav-item").forEach(el => {
         if (el.dataset.tab === tab) {
-          el.className = "nav-item flex flex-col items-center py-1 px-2 text-blue-600";
+          el.className = "nav-item flex flex-col items-center py-1 px-3 text-blue-600";
         } else {
-          el.className = "nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600";
+          el.className = "nav-item flex flex-col items-center py-1 px-3 text-slate-400 hover:text-slate-600";
         }
       });
 
       if (tab === "notices") renderNoticesScreen();
+      else if (tab === "upload") renderUploadScreen();
       else if (tab === "resources") renderResourcesScreen();
       else if (tab === "chat") renderChatScreen();
-      else if (tab === "action") {
-        if (currentUser && (currentUser.role === "faculty" || currentUser.role === "admin")) {
-          renderUploadScreen();
-        } else {
-          renderNotificationsScreen();
-        }
-      } else if (tab === "profile") renderProfileScreen();
+      else if (tab === "notifications" || tab === "action") renderNotificationsScreen();
+      else if (tab === "profile") renderProfileScreen();
     }
 
     function showMainApp() {
-      document.getElementById("bottom-nav").classList.remove("hidden");
       const isFaculty = currentUser.role === "faculty" || currentUser.role === "admin";
+      const nav = document.getElementById("bottom-nav");
+      nav.classList.remove("hidden");
       
-      const actionIcon = document.getElementById("nav-action-icon");
-      const actionLabel = document.getElementById("nav-action-label");
       if (isFaculty) {
-        actionIcon.setAttribute("data-lucide", "upload-cloud");
-        actionLabel.textContent = "Upload";
+        // Faculty / Admin gets dedicated tabs: Notices, Upload, AI Chat, Profile
+        // (Academic Resources catalog is a student feature and is excluded for faculty)
+        nav.innerHTML = `
+          <button onclick="navigate('notices')" class="nav-item flex flex-col items-center py-1 px-3 text-blue-600" data-tab="notices">
+            <i data-lucide="newspaper" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Notices</span>
+          </button>
+          <button onclick="navigate('upload')" class="nav-item flex flex-col items-center py-1 px-3 text-slate-400 hover:text-slate-600" data-tab="upload">
+            <i data-lucide="upload-cloud" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Upload</span>
+          </button>
+          <button onclick="navigate('chat')" class="nav-item flex flex-col items-center py-1 px-3 text-slate-400 hover:text-slate-600" data-tab="chat">
+            <div class="relative">
+              <i data-lucide="bot" class="w-5 h-5 mb-0.5"></i>
+              <span class="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
+            </div>
+            <span class="text-[10px] font-medium">AI Chat</span>
+          </button>
+          <button onclick="navigate('profile')" class="nav-item flex flex-col items-center py-1 px-3 text-slate-400 hover:text-slate-600" data-tab="profile">
+            <i data-lucide="user" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Profile</span>
+          </button>
+        `;
       } else {
-        actionIcon.setAttribute("data-lucide", "bell");
-        actionLabel.textContent = "Alerts";
+        // Student gets: Notices, Resources, AI Chat, Alerts, Profile
+        nav.innerHTML = `
+          <button onclick="navigate('notices')" class="nav-item flex flex-col items-center py-1 px-2 text-blue-600" data-tab="notices">
+            <i data-lucide="newspaper" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Notices</span>
+          </button>
+          <button onclick="navigate('resources')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="resources">
+            <i data-lucide="book-open" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Resources</span>
+          </button>
+          <button onclick="navigate('chat')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="chat">
+            <div class="relative">
+              <i data-lucide="bot" class="w-5 h-5 mb-0.5"></i>
+              <span class="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>
+            </div>
+            <span class="text-[10px] font-medium">AI Chat</span>
+          </button>
+          <button onclick="navigate('notifications')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="notifications">
+            <i data-lucide="bell" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Alerts</span>
+          </button>
+          <button onclick="navigate('profile')" class="nav-item flex flex-col items-center py-1 px-2 text-slate-400 hover:text-slate-600" data-tab="profile">
+            <i data-lucide="user" class="w-5 h-5 mb-0.5"></i>
+            <span class="text-[10px] font-medium">Profile</span>
+          </button>
+        `;
       }
+
       lucide.createIcons();
       navigate("notices");
     }
@@ -636,12 +655,12 @@
               <option value="CE" ${stBranch === 'CE' ? 'selected' : ''}>CE</option>
             </select>
             <select id="res-sem" onchange="fetchResources()" class="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs">
-              <option value="0">All Semesters</option>
+              <option value="0" selected>All Semesters</option>
               <option value="1">Sem 1</option>
               <option value="2">Sem 2</option>
               <option value="3">Sem 3</option>
               <option value="4">Sem 4</option>
-              <option value="5" selected>Sem 5</option>
+              <option value="5">Sem 5</option>
               <option value="6">Sem 6</option>
               <option value="7">Sem 7</option>
               <option value="8">Sem 8</option>
