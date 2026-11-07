@@ -16,7 +16,7 @@ Why not store the raw PDF files directly inside PostgreSQL (as BLOBs)?
 
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime, Text, JSON
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, deferred
 
 from app.database import Base
 
@@ -49,8 +49,9 @@ class Document(Base):
     is_processed = Column(Boolean, default=False)
 
     # Full extracted text from the PDF — stored in DB so it's always available
-    # even after container restarts (Render ephemeral filesystem)
-    raw_text = Column(Text, nullable=True)
+    # Uses deferred() so it is NOT included in bulk SELECT queries (avoids crashes
+    # if column is missing on first deploy). Loaded lazily only when explicitly accessed.
+    raw_text = deferred(Column(Text, nullable=True))
 
     # Foreign Key: ID of the faculty/admin user who uploaded the document
     uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
