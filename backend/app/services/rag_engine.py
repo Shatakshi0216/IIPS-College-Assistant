@@ -6,12 +6,58 @@ and grounded answering via Google Gemini.
 import os
 import json
 import logging
+import urllib.request
+import ssl
 import warnings
 from typing import List, Dict, Any, Optional
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-import google.generativeai as genai
 from app.config import settings
+
+_ssl_ctx = ssl.create_default_context()
+
+# Ordered list of model names to try (newest first, all confirmed working)
+GEMINI_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+]
+
+
+def _call_gemini(prompt: str, api_key: str, timeout: int = 25) -> str:
+    """
+    Calls Gemini REST API directly (no SDK), trying models in order.
+    Returns generated text, or raises an exception if all models fail.
+    """
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}]
+    }).encode("utf-8")
+
+    for model_name in GEMINI_MODELS:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_name}:generateContent?key={api_key}"
+        )
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8")
+            logging.getLogger(__name__).warning(f"Gemini {model_name} HTTP {e.code}: {err_body[:120]}")
+            if e.code == 404:
+                continue  # try next model
+            raise
+        except Exception as e:
+            logging.getLogger(__name__).warning(f"Gemini {model_name} error: {e}")
+            raise
+
+    raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}")
 
 logger = logging.getLogger(__name__)
 
@@ -209,20 +255,7 @@ class RAGEngine:
             }
 
         try:
-            genai.configure(api_key=api_key)
-            # Use Gemini 3.5 Flash Lite
-            model = None
-            for m_name in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]:
-                try:
-                    model = genai.GenerativeModel(m_name)
-                    break
-                except Exception:
-                    continue
-            if not model:
-                model = genai.GenerativeModel("gemini-3.5-flash-lite")
-
-            rag_prompt = f"""
-You are the official AI Assistant for International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya (IIPS DAVV).
+            rag_prompt = f"""You are the official AI Assistant for International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya (IIPS DAVV).
 A student or faculty member is asking: "{query}"
 
 Answer the question strictly and accurately using the official college document excerpts provided below.
@@ -235,8 +268,7 @@ Rules:
 OFFICIAL IIPS DAVV DOCUMENTS:
 {combined_context}
 """
-            response = model.generate_content(rag_prompt)
-            answer_text = response.text.strip()
+            answer_text = _call_gemini(rag_prompt, api_key)
 
             return {
                 "query": query,
@@ -291,19 +323,7 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             }
 
         try:
-            genai.configure(api_key=api_key)
-            model = None
-            for m_name in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]:
-                try:
-                    model = genai.GenerativeModel(m_name)
-                    break
-                except Exception:
-                    continue
-            if not model:
-                model = genai.GenerativeModel("gemini-3.5-flash-lite")
-
-            prompt = f"""
-You are an academic summarizer. Summarize this official college document titled '{document_title}'.
+            prompt = f"""You are an academic summarizer. Summarize this official college document titled '{document_title}'.
 Provide:
 1. A concise 3-sentence summary of the main announcement.
 2. Important deadlines or dates mentioned.
@@ -313,10 +333,10 @@ Provide:
 DOCUMENT TEXT:
 {text[:10000]}
 """
-            response = model.generate_content(prompt)
+            summary_text = _call_gemini(prompt, api_key)
             return {
                 "title": document_title,
-                "summary": response.text.strip()
+                "summary": summary_text
             }
         except Exception as e:
             logger.error(f"Error generating summary: {e}")

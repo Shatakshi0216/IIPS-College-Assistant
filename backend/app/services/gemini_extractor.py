@@ -5,14 +5,55 @@ Uses Google Gemini to analyze uploaded PDF notices and extract structured JSON m
 """
 import json
 import logging
+import urllib.request
+import ssl
 import warnings
 from typing import Dict, Any, Optional
 
-warnings.filterwarnings("ignore", category=FutureWarning)
-import google.generativeai as genai
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_ssl_ctx = ssl.create_default_context()
+
+GEMINI_MODELS = [
+    "gemini-3.5-flash-lite",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+]
+
+
+def _call_gemini_extractor(prompt: str, api_key: str) -> str:
+    """Direct REST call to Gemini, trying models in order."""
+    body = json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}]
+    }).encode("utf-8")
+
+    for model_name in GEMINI_MODELS:
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model_name}:generateContent?key={api_key}"
+        )
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        try:
+            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8")
+            logger.warning(f"Gemini {model_name} HTTP {e.code}: {err[:100]}")
+            if e.code == 404:
+                continue
+            raise
+        except Exception as e:
+            logger.warning(f"Gemini {model_name} error: {e}")
+            raise
+
+    raise RuntimeError(f"All Gemini models unavailable: {GEMINI_MODELS}")
 
 # System instruction defining exact JSON schema output
 EXTRACTION_PROMPT = """
@@ -49,21 +90,8 @@ def extract_notice_metadata(pdf_text: str) -> Dict[str, Any]:
         return _fallback_metadata_extractor(pdf_text)
 
     try:
-        genai.configure(api_key=api_key)
-        # Use Gemini 3.5 Flash Lite (ultra-fast, accurate structured extraction)
-        model = None
-        for m_name in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]:
-            try:
-                model = genai.GenerativeModel(m_name)
-                break
-            except Exception:
-                continue
-        if not model:
-            model = genai.GenerativeModel("gemini-3.5-flash-lite")
-
         full_prompt = f"{EXTRACTION_PROMPT}\n\nDOCUMENT TEXT:\n{pdf_text[:12000]}"
-        response = model.generate_content(full_prompt)
-        response_text = response.text.strip()
+        response_text = _call_gemini_extractor(full_prompt, api_key)
 
         # Strip accidental code blocks if model added them
         if response_text.startswith("```json"):
