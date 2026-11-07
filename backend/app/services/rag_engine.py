@@ -92,36 +92,93 @@ class RAGEngine:
         return [item[1] for item in scored[:top_k]]
 
     def answer_question(
-        self, query: str, document_id: Optional[int] = None
+        self, query: str, document_id: Optional[int] = None, db: Optional[Any] = None
     ) -> Dict[str, Any]:
         """
-        Executes the RAG pipeline:
-        1. Retrieves relevant official chunks
-        2. Prompts Gemini with grounded context
-        3. Returns answer along with source citations
+        Executes the hybrid RAG pipeline:
+        1. Retrieves relevant text chunks from FAISS / persisted vector store
+        2. Augments with real-time Document & NoticeMetadata knowledge from PostgreSQL
+        3. Prompts Gemini with grounded official context
+        4. Returns structured answer along with verified source citations
         """
         retrieved_chunks = self.search_similar_chunks(query, top_k=4, document_id=document_id)
 
-        if not retrieved_chunks:
-            return {
-                "query": query,
-                "answer": "I could not find any official college documents addressing your question. Please check with your department or upload the relevant notice.",
-                "sources": []
-            }
-
-        # Build context from chunks
         context_blocks = []
         sources = []
+        seen_doc_ids = set()
+
         for c in retrieved_chunks:
             meta = c.get("metadata", {})
             doc_title = meta.get("document_title", "Official Document")
             doc_id = meta.get("document_id")
-            context_blocks.append(f"--- Document: {doc_title} ---\n{c['text']}")
+            if doc_id:
+                seen_doc_ids.add(doc_id)
+            context_blocks.append(f"--- Document Content ({doc_title}) ---\n{c['text']}")
             sources.append({
                 "document_id": doc_id,
                 "document_title": doc_title,
                 "snippet": c["text"][:180] + "..."
             })
+
+        # Augment with Database Document & NoticeMetadata knowledge
+        if db:
+            try:
+                from app.models.document import Document
+                docs = db.query(Document).all()
+                query_lower = query.lower()
+                query_terms = [w.strip(' "\'') for w in query_lower.split() if len(w.strip(' "\'')) > 2]
+
+                for doc in docs:
+                    m = doc.notice_metadata
+                    r = doc.academic_resource
+                    title_lower = doc.title.lower()
+
+                    # Match if query specifically asks about this document or if keywords match
+                    title_match = any(term in title_lower for term in query_terms) or (title_lower in query_lower)
+                    summary_match = bool(m and m.summary and any(term in m.summary.lower() for term in query_terms))
+                    is_selected_doc = bool(document_id is not None and doc.id == document_id)
+
+                    # If document matches query or if we have fewer than 10 documents, always ground with them
+                    if is_selected_doc or title_match or summary_match or len(docs) <= 10:
+                        doc_details = [
+                            f"--- Official College Document: {doc.title} ---",
+                            f"Category: {doc.category.replace('_', ' ').title()}"
+                        ]
+                        if m:
+                            if m.summary:
+                                doc_details.append(f"Summary: {m.summary}")
+                            if m.action_required:
+                                doc_details.append(f"Action Required: {m.action_required}")
+                            if m.deadline:
+                                doc_details.append(f"Deadline / Exam Dates: {m.deadline}")
+                            if m.eligible_branches:
+                                doc_details.append(f"Eligible Branches: {', '.join(m.eligible_branches)}")
+                            if m.eligible_years:
+                                doc_details.append(f"Eligible Years: {', '.join(map(str, m.eligible_years))}")
+                            if m.contact_info:
+                                doc_details.append(f"Contact Info: {m.contact_info}")
+                        if r:
+                            doc_details.append(f"Academic Resource: {r.subject_name} ({r.subject_code or 'N/A'}), Branch: {r.branch}, Semester: {r.semester}")
+
+                        context_blocks.append("\n".join(doc_details))
+
+                        if doc.id not in seen_doc_ids:
+                            seen_doc_ids.add(doc.id)
+                            snippet_text = m.summary if (m and m.summary) else f"Official college document: {doc.title}"
+                            sources.append({
+                                "document_id": doc.id,
+                                "document_title": doc.title,
+                                "snippet": snippet_text[:180] + "..."
+                            })
+            except Exception as e:
+                logger.error(f"Error querying DB in RAG pipeline: {e}")
+
+        if not context_blocks:
+            return {
+                "query": query,
+                "answer": "I could not find any official college documents addressing your question. Please check with your department or upload the relevant notice.",
+                "sources": []
+            }
 
         combined_context = "\n\n".join(context_blocks)
 

@@ -28,10 +28,10 @@ class _AiChatScreenState extends State<AiChatScreen> {
   bool _isSending = false;
 
   final List<String> _quickPrompts = [
-    "What is the attendance requirement?",
-    "When is the TCS placement deadline?",
-    "Who is eligible for campus recruitment?",
-    "What are the mid-term exam rules?",
+    "Tell me about the Final Time Table schedule",
+    "What is the college attendance requirement?",
+    "What are the examination rules and guidelines?",
+    "What are the latest official announcements?",
   ];
 
   @override

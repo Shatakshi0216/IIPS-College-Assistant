@@ -36,7 +36,8 @@ def ask_college_assistant(
 
     response = rag_engine.answer_question(
         query=request.query,
-        document_id=request.document_id
+        document_id=request.document_id,
+        db=db
     )
 
     return response
