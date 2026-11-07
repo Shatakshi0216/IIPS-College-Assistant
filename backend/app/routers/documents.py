@@ -87,6 +87,10 @@ async def upload_document(
     except Exception as e:
         raw_text = ""
 
+    # 3b. Persist raw_text in DB so it's always available after container restarts
+    if raw_text:
+        new_doc.raw_text = raw_text
+
     # 4. If category is Notice, Rule, or Circular, extract structured metadata with Gemini
     if category.lower() in ["notice", "rule", "circular"]:
         ai_data = extract_notice_metadata(raw_text) if raw_text else {}

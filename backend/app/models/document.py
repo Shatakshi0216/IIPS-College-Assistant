@@ -48,6 +48,10 @@ class Document(Base):
     # Flag: True once the document has been processed by PyPDF and indexed in RAG
     is_processed = Column(Boolean, default=False)
 
+    # Full extracted text from the PDF — stored in DB so it's always available
+    # even after container restarts (Render ephemeral filesystem)
+    raw_text = Column(Text, nullable=True)
+
     # Foreign Key: ID of the faculty/admin user who uploaded the document
     uploaded_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
 

@@ -183,16 +183,17 @@ class RAGEngine:
                     title_match = any(term in title_lower for term in query_terms) or (title_lower in query_lower)
                     summary_match = bool(m and m.summary and any(term in m.summary.lower() for term in query_terms))
                     is_selected_doc = bool(document_id is not None and doc.id == document_id)
+                    text_match = bool(doc.raw_text and any(term in doc.raw_text.lower() for term in query_terms))
 
                     # If document matches query or if we have fewer than 10 documents, always ground with them
-                    if is_selected_doc or title_match or summary_match or len(docs) <= 10:
+                    if is_selected_doc or title_match or summary_match or text_match or len(docs) <= 10:
                         doc_details = [
-                            f"--- Official College Document: {doc.title} ---",
+                            f"=== OFFICIAL COLLEGE DOCUMENT: {doc.title} ===",
                             f"Category: {doc.category.replace('_', ' ').title()}"
                         ]
                         if m:
                             if m.summary:
-                                doc_details.append(f"Summary: {m.summary}")
+                                doc_details.append(f"AI Summary: {m.summary}")
                             if m.action_required:
                                 doc_details.append(f"Action Required: {m.action_required}")
                             if m.deadline:
@@ -206,13 +207,19 @@ class RAGEngine:
                         if r:
                             doc_details.append(f"Academic Resource: {r.subject_name} ({r.subject_code or 'N/A'}), Branch: {r.branch}, Semester: {r.semester}")
 
-                        # If physical file exists, extract snippet from it
-                        if doc.file_path and os.path.exists(doc.file_path):
+                        # --- PRIORITY: Use stored raw_text from database (always available) ---
+                        if doc.raw_text and doc.raw_text.strip():
+                            doc_details.append(f"\n--- FULL PDF CONTENT ---\n{doc.raw_text[:4000]}")
+                        elif doc.file_path and os.path.exists(doc.file_path):
+                            # Fallback: try to read from filesystem if file still exists
                             try:
                                 from app.services.pdf_processor import extract_text_from_pdf
                                 file_text = extract_text_from_pdf(doc.file_path)
                                 if file_text:
-                                    doc_details.append(f"Full Document Excerpt:\n{file_text[:1500]}")
+                                    doc_details.append(f"\n--- FULL PDF CONTENT ---\n{file_text[:4000]}")
+                                    # Also save it back to DB for future requests
+                                    doc.raw_text = file_text
+                                    db.add(doc)
                             except Exception:
                                 pass
 
@@ -226,6 +233,10 @@ class RAGEngine:
                                 "document_title": doc.title,
                                 "snippet": snippet_text[:180] + "..."
                             })
+                try:
+                    db.commit()
+                except Exception:
+                    db.rollback()
             except Exception as e:
                 logger.error(f"Error querying DB in RAG pipeline: {e}")
 

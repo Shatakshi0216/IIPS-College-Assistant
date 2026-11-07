@@ -22,6 +22,35 @@ from app.routers import (
 # 1. Create database tables on application startup
 Base.metadata.create_all(bind=engine)
 
+def _run_migrations():
+    """
+    Applies safe ALTER TABLE migrations for new columns added after initial deploy.
+    Uses IF NOT EXISTS so it's idempotent and never crashes on re-run.
+    """
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            # Add raw_text column to documents table (stores full PDF text in DB)
+            conn.execute(text(
+                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS raw_text TEXT"
+            ))
+            conn.commit()
+            print("[OK] Migration: documents.raw_text column ensured.")
+    except Exception as e:
+        # SQLite doesn't support IF NOT EXISTS in ALTER TABLE — handle gracefully
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE documents ADD COLUMN raw_text TEXT"))
+                conn.commit()
+                print("[OK] Migration: documents.raw_text added (SQLite).")
+        except Exception:
+            print(f"[INFO] Migration skipped (column may already exist): {e}")
+
+try:
+    _run_migrations()
+except Exception as e:
+    print(f"[WARNING] Migration error: {e}")
+
 def init_production_db():
     """
     Cleans up initial mock data and provisions the official IIPS DAVV Master Admin.
@@ -116,6 +145,19 @@ def init_production_db():
                         title=f"Official Notice: {p_doc.title}",
                         message=summary_text
                     ))
+
+        # 5. Backfill raw_text for documents uploaded before this column existed
+        docs_without_text = db.query(Document).filter(Document.raw_text == None).all()
+        for d in docs_without_text:
+            if d.file_path and os.path.exists(d.file_path):
+                try:
+                    from app.services.pdf_processor import extract_text_from_pdf
+                    extracted = extract_text_from_pdf(d.file_path)
+                    if extracted:
+                        d.raw_text = extracted
+                        print(f"[OK] Backfilled raw_text for: {d.title}")
+                except Exception as ex:
+                    print(f"[WARNING] Could not backfill {d.title}: {ex}")
 
         db.commit()
     except Exception as e:
