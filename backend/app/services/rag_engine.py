@@ -160,6 +160,16 @@ class RAGEngine:
                         if r:
                             doc_details.append(f"Academic Resource: {r.subject_name} ({r.subject_code or 'N/A'}), Branch: {r.branch}, Semester: {r.semester}")
 
+                        # If physical file exists, extract snippet from it
+                        if doc.file_path and os.path.exists(doc.file_path):
+                            try:
+                                from app.services.pdf_processor import extract_text_from_pdf
+                                file_text = extract_text_from_pdf(doc.file_path)
+                                if file_text:
+                                    doc_details.append(f"Full Document Excerpt:\n{file_text[:1500]}")
+                            except Exception:
+                                pass
+
                         context_blocks.append("\n".join(doc_details))
 
                         if doc.id not in seen_doc_ids:
@@ -200,17 +210,27 @@ class RAGEngine:
 
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            # Use Gemini 3.5 Flash Lite
+            model = None
+            for m_name in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]:
+                try:
+                    model = genai.GenerativeModel(m_name)
+                    break
+                except Exception:
+                    continue
+            if not model:
+                model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
             rag_prompt = f"""
 You are the official AI Assistant for International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya (IIPS DAVV).
 A student or faculty member is asking: "{query}"
 
-Answer the question strictly and accurately using ONLY the official college document excerpts provided below.
+Answer the question strictly and accurately using the official college document excerpts provided below.
 Rules:
-1. Ground your answer in the provided documents. Do NOT make up facts.
-2. If the excerpts do not contain the answer, politely state that the provided documents do not mention this.
-3. Keep the tone helpful, professional, and clear. Mention relevant deadlines or requirements clearly if present.
+1. Ground your answer in the provided documents.
+2. Present key dates, deadlines, actions required, and contact details clearly using bullet points.
+3. If specific details are not mentioned in the documents, advise the user to consult the official PDF or their department.
+4. Keep the tone helpful, professional, and welcoming.
 
 OFFICIAL IIPS DAVV DOCUMENTS:
 {combined_context}
@@ -228,9 +248,9 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             return {
                 "query": query,
                 "answer": (
-                    f"According to IIPS DAVV official records for **{first_doc_title}**:\n\n"
-                    f"{combined_context.replace('---', '').strip()[:600]}\n\n"
-                    f"*(AI Engine notice: {str(e)[:80]})*"
+                    f"**IIPS DAVV Official Records for {first_doc_title}:**\n\n"
+                    f"{combined_context.replace('---', '').strip()[:800]}\n\n"
+                    f"*Note: Please review the attached official document for further details.*"
                 ),
                 "sources": sources
             }
@@ -272,7 +292,15 @@ OFFICIAL IIPS DAVV DOCUMENTS:
 
         try:
             genai.configure(api_key=api_key)
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = None
+            for m_name in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]:
+                try:
+                    model = genai.GenerativeModel(m_name)
+                    break
+                except Exception:
+                    continue
+            if not model:
+                model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
             prompt = f"""
 You are an academic summarizer. Summarize this official college document titled '{document_title}'.

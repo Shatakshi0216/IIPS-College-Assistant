@@ -50,8 +50,16 @@ def extract_notice_metadata(pdf_text: str) -> Dict[str, Any]:
 
     try:
         genai.configure(api_key=api_key)
-        # Use Gemini 1.5 Flash (fast, lightweight, highly accurate for structured extraction)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Use Gemini 3.5 Flash Lite (ultra-fast, accurate structured extraction)
+        model = None
+        for m_name in ["gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-2.5-flash"]:
+            try:
+                model = genai.GenerativeModel(m_name)
+                break
+            except Exception:
+                continue
+        if not model:
+            model = genai.GenerativeModel("gemini-3.5-flash-lite")
 
         full_prompt = f"{EXTRACTION_PROMPT}\n\nDOCUMENT TEXT:\n{pdf_text[:12000]}"
         response = model.generate_content(full_prompt)
