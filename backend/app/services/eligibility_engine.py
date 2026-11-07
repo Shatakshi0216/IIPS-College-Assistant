@@ -22,8 +22,11 @@ def is_student_eligible(student: StudentProfile, notice: NoticeMetadata) -> bool
     # 1. Branch Check
     if notice.eligible_branches:
         normalized_branches = [str(b).strip().upper() for b in notice.eligible_branches]
-        if "ALL" not in normalized_branches and student.branch.strip().upper() not in normalized_branches:
-            return False
+        if "ALL" not in normalized_branches:
+            st_b = student.branch.strip().upper()
+            matched = any(st_b in nb or nb in st_b for nb in normalized_branches)
+            if not matched:
+                return False
 
     # 2. Year Check
     if notice.eligible_years:

@@ -30,7 +30,7 @@ def get_personalized_notice_feed(
     """
     all_notices = (
         db.query(Document)
-        .filter(Document.category == "notice")
+        .filter(Document.category.in_(["notice", "rule", "circular"]))
         .order_by(Document.created_at.desc())
         .all()
     )

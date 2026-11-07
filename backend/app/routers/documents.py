@@ -87,17 +87,17 @@ async def upload_document(
     except Exception as e:
         raw_text = ""
 
-    # 4. If category is Notice, extract structured metadata with Gemini
-    if category.lower() == "notice" and raw_text:
-        ai_data = extract_notice_metadata(raw_text)
+    # 4. If category is Notice, Rule, or Circular, extract structured metadata with Gemini
+    if category.lower() in ["notice", "rule", "circular"]:
+        ai_data = extract_notice_metadata(raw_text) if raw_text else {}
         notice_meta = NoticeMetadata(
             document_id=new_doc.id,
             title=ai_data.get("title") or title,
-            summary=ai_data.get("summary"),
+            summary=ai_data.get("summary") or f"Official document: {title}. Please open the PDF to view all details.",
             action_required=ai_data.get("action_required"),
             deadline=ai_data.get("deadline"),
             eligible_branches=ai_data.get("eligible_branches", ["ALL"]),
-            eligible_years=ai_data.get("eligible_years", [1, 2, 3, 4]),
+            eligible_years=ai_data.get("eligible_years", [1, 2, 3, 4, 5]),
             min_cgpa=float(ai_data.get("min_cgpa") or 0.0),
             contact_info=ai_data.get("contact_info"),
             is_urgent=bool(ai_data.get("is_urgent", False))

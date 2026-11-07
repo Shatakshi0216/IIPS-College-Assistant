@@ -80,6 +80,43 @@ def init_production_db():
             db.add(admin_profile)
             print(f"[OK] Master Admin created: {admin_email} / Admin@IIPS2026")
 
+        # 4. Ensure any uploaded notice/rule document has NoticeMetadata and is visible to students
+        pending_docs = db.query(Document).filter(
+            Document.category.in_(["notice", "rule", "circular"]),
+            Document.notice_metadata == None
+        ).all()
+        for p_doc in pending_docs:
+            summary_text = f"Official Notification: {p_doc.title}. Please review the official PDF for complete details and guidelines."
+            meta = NoticeMetadata(
+                document_id=p_doc.id,
+                title=p_doc.title,
+                summary=summary_text,
+                action_required="Check dates, timings, and instructions in the attached document.",
+                deadline=None,
+                eligible_branches=["ALL"],
+                eligible_years=[1, 2, 3, 4, 5],
+                min_cgpa=0.0,
+                contact_info="examination@iips.davv.ac.in",
+                is_urgent=True
+            )
+            db.add(meta)
+            db.flush()
+
+            # Create notification for all students
+            all_students = db.query(StudentProfile).all()
+            for st in all_students:
+                existing_notif = db.query(Notification).filter(
+                    Notification.document_id == p_doc.id,
+                    Notification.student_id == st.user_id
+                ).first()
+                if not existing_notif:
+                    db.add(Notification(
+                        student_id=st.user_id,
+                        document_id=p_doc.id,
+                        title=f"Official Notice: {p_doc.title}",
+                        message=summary_text
+                    ))
+
         db.commit()
     except Exception as e:
         db.rollback()
