@@ -183,14 +183,17 @@ class RAGEngine:
         combined_context = "\n\n".join(context_blocks)
 
         api_key = settings.GEMINI_API_KEY
+        first_doc_title = sources[0]["document_title"] if sources else "Official Documents"
+        first_snippet = sources[0]["snippet"] if sources else "Official college document details."
+
         if not api_key or "your-gemini-api-key" in api_key.lower():
             # Grounded fallback response when API key is pending
             return {
                 "query": query,
                 "answer": (
-                    f"Based on college records (e.g. '{retrieved_chunks[0]['metadata'].get('document_title')}'):\n\n"
-                    f"{retrieved_chunks[0]['text'][:300]}...\n\n"
-                    f"(Note: Connect your Gemini API Key in backend/.env for AI-summarized synthesis)."
+                    f"Based on IIPS DAVV official records for **{first_doc_title}**:\n\n"
+                    f"{combined_context.replace('---', '').strip()[:600]}\n\n"
+                    f"Please review the official document PDF for comprehensive details."
                 ),
                 "sources": sources
             }
@@ -224,7 +227,11 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             logger.error(f"Error calling Gemini in RAG pipeline: {e}")
             return {
                 "query": query,
-                "answer": f"Error contacting AI service: {str(e)}. Retrieved information:\n\n{retrieved_chunks[0]['text'][:250]}...",
+                "answer": (
+                    f"According to IIPS DAVV official records for **{first_doc_title}**:\n\n"
+                    f"{combined_context.replace('---', '').strip()[:600]}\n\n"
+                    f"*(AI Engine notice: {str(e)[:80]})*"
+                ),
                 "sources": sources
             }
 
