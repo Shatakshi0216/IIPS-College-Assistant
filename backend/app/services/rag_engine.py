@@ -222,14 +222,14 @@ class RAGEngine:
 
                         # --- PRIORITY: Use stored raw_text from database (always available) ---
                         if doc_raw_text:
-                            doc_details.append(f"\n--- FULL PDF CONTENT ---\n{doc_raw_text[:4000]}")
+                            doc_details.append(f"\n--- FULL PDF CONTENT ---\n{doc_raw_text[:12000]}")
                         elif doc.file_path and os.path.exists(doc.file_path):
                             # Fallback: read from filesystem and save back to DB
                             try:
                                 from app.services.pdf_processor import extract_text_from_pdf
                                 file_text = extract_text_from_pdf(doc.file_path)
                                 if file_text:
-                                    doc_details.append(f"\n--- FULL PDF CONTENT ---\n{file_text[:4000]}")
+                                    doc_details.append(f"\n--- FULL PDF CONTENT ---\n{file_text[:12000]}")
                                     try:
                                         db.execute(sql_text(
                                             "UPDATE documents SET raw_text = :t WHERE id = :id"
