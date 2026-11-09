@@ -24,13 +24,17 @@ GEMINI_MODELS = [
 ]
 
 
-def _call_gemini(prompt: str, api_key: str, timeout: int = 25) -> str:
+def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
     """
     Calls Gemini REST API directly (no SDK), trying models in order.
     Returns generated text, or raises an exception if all models fail.
     """
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}]
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "maxOutputTokens": 2048,
+            "temperature": 0.2
+        }
     }).encode("utf-8")
 
     for model_name in GEMINI_MODELS:
@@ -282,12 +286,14 @@ class RAGEngine:
             rag_prompt = f"""You are the official AI Assistant for International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya (IIPS DAVV).
 A student or faculty member is asking: "{query}"
 
-Answer the question strictly and accurately using the official college document excerpts provided below.
-Rules:
-1. Ground your answer in the provided documents.
-2. Present key dates, deadlines, actions required, and contact details clearly using bullet points.
-3. If specific details are not mentioned in the documents, advise the user to consult the official PDF or their department.
-4. Keep the tone helpful, professional, and welcoming.
+Answer the question using ONLY the official college document content provided below.
+Important rules:
+1. For timetables: list ALL subjects, dates, times, course codes, and groups completely — do NOT stop after a few entries.
+2. Use clear markdown formatting: bold headings, bullet points per subject.
+3. Present every row/entry from the timetable that appears in the document.
+4. Keep the tone helpful, professional, and complete.
+5. Do not truncate — provide the FULL list of exam dates and subjects.
+
 
 OFFICIAL IIPS DAVV DOCUMENTS:
 {combined_context}
