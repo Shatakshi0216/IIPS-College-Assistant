@@ -266,11 +266,17 @@ class RAGEngine:
 
                         if doc.id not in seen_doc_ids:
                             seen_doc_ids.add(doc.id)
-                            snippet_text = m.summary if (m and m.summary) else f"Official college document: {doc.title}"
+                            # Prefer raw_text excerpt over stored summary (which may be old boilerplate)
+                            if doc_raw_text:
+                                snippet_text = doc_raw_text[:200].strip()
+                            elif m and m.summary and "official academic resource" not in m.summary.lower() and "covers course curriculum" not in m.summary.lower():
+                                snippet_text = m.summary[:200]
+                            else:
+                                snippet_text = f"{doc.title}. Please open the original PDF for complete details."
                             sources.append({
                                 "document_id": doc.id,
                                 "document_title": doc.title,
-                                "snippet": snippet_text[:180] + "..."
+                                "snippet": snippet_text[:200] + "..."
                             })
             except Exception as e:
                 logger.error(f"Error querying DB in RAG pipeline: {e}")
@@ -292,8 +298,11 @@ class RAGEngine:
             # Gemini not configured — return clean excerpt from actual document content
             fallback_parts = []
             for s in sources[:3]:
-                fallback_parts.append(f"**{s['document_title']}**\n{s['snippet']}")
-            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else combined_context[:400]
+                # Show title + clean snippet (not raw === OFFICIAL COLLEGE DOCUMENT === format)
+                clean_snippet = s["snippet"].replace("=== OFFICIAL COLLEGE DOCUMENT:", "").strip()
+                clean_snippet = clean_snippet.replace("===", "").strip()
+                fallback_parts.append(f"**{s['document_title']}**\n{clean_snippet}")
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "I found relevant documents but could not generate an AI answer right now."
             return {
                 "query": query,
                 "answer": fallback_body.strip() or "No relevant college documents found for your query.",
@@ -327,8 +336,9 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             logger.error(f"Error calling Gemini in RAG pipeline: {e}")
             fallback_parts = []
             for s in sources[:3]:
-                fallback_parts.append(f"**{s['document_title']}**\n{s['snippet']}")
-            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else combined_context[:400]
+                clean_snippet = s["snippet"].replace("=== OFFICIAL COLLEGE DOCUMENT:", "").replace("===", "").strip()
+                fallback_parts.append(f"**{s['document_title']}**\n{clean_snippet}")
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "I found relevant documents but could not generate an AI answer right now."
             return {
                 "query": query,
                 "answer": fallback_body.strip() or "No relevant college documents found for your query.",

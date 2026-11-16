@@ -151,8 +151,12 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Summary Section
-                  if (meta?.summary != null) ...[
+                  // Summary Section — only show if NOT boilerplate
+                  if (meta?.summary != null &&
+                      !meta!.summary!.toLowerCase().contains('official academic resource') &&
+                      !meta.summary!.toLowerCase().contains('covers course curriculum') &&
+                      !meta.summary!.toLowerCase().contains('unit-wise syllabus modules') &&
+                      meta.summary!.length > 20) ...[
                     const Text(
                       'AI SUMMARY',
                       style: TextStyle(
@@ -170,7 +174,7 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        meta!.summary!,
+                        meta.summary!,
                         style: const TextStyle(fontSize: 14, height: 1.4),
                       ),
                     ),
@@ -498,10 +502,14 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                                       ),
                                       const SizedBox(height: 6),
 
-                                      // Summary Preview
-                                      if (meta?.summary != null)
+                                      // Summary Preview — only show if not boilerplate
+                                      if (meta?.summary != null &&
+                                          !meta!.summary!.toLowerCase().contains('official academic resource') &&
+                                          !meta.summary!.toLowerCase().contains('covers course curriculum') &&
+                                          !meta.summary!.toLowerCase().contains('unit-wise syllabus modules') &&
+                                          meta.summary!.length > 20)
                                         Text(
-                                          meta!.summary!,
+                                          meta.summary!,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
                                           style: TextStyle(
