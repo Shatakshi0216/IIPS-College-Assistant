@@ -294,7 +294,7 @@ class RAGEngine:
         first_doc_title = sources[0]["document_title"] if sources else "Official Documents"
         first_snippet = sources[0]["snippet"] if sources else "Official college document details."
 
-        if not api_key or "your-gemini-api-key" in api_key.lower() or not api_key.startswith("AIza"):
+        if not api_key or "your-gemini-api-key" in api_key.lower() or len(api_key) < 20:
             # Gemini not configured — return clean excerpt from actual document content
             fallback_parts = []
             for s in sources[:3]:
@@ -361,7 +361,7 @@ OFFICIAL IIPS DAVV DOCUMENTS:
                 text = "\n\n".join(matched)
 
         api_key = settings.GEMINI_API_KEY
-        gemini_available = bool(api_key and api_key.startswith("AIza"))
+        gemini_available = bool(api_key and len(api_key) >= 20 and "your-gemini-api-key" not in api_key.lower())
 
         # If no text found at all, we cannot summarize
         if not text.strip():
