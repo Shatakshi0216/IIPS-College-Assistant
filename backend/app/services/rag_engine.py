@@ -290,12 +290,16 @@ class RAGEngine:
 
         if not api_key or "your-gemini-api-key" in api_key.lower():
             # Grounded fallback response when API key is pending
+            fallback_parts = []
+            for s in sources[:3]:
+                fallback_parts.append(f"**{s['document_title']}**\n{s['snippet']}")
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "No matching documents."
             return {
                 "query": query,
                 "answer": (
-                    f"Based on IIPS DAVV official records for **{first_doc_title}**:\n\n"
-                    f"{combined_context.replace('---', '').strip()[:600]}\n\n"
-                    f"Please review the official document PDF for comprehensive details."
+                    f"I found relevant official documents but AI answering is not configured yet.\n\n"
+                    f"{fallback_body}\n\n"
+                    f"*Please open the original PDF for complete details.*"
                 ),
                 "sources": sources
             }
@@ -325,12 +329,17 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             }
         except Exception as e:
             logger.error(f"Error calling Gemini in RAG pipeline: {e}")
+            # Build a clean, readable fallback from document metadata (no raw context dump)
+            fallback_parts = []
+            for s in sources[:3]:
+                fallback_parts.append(f"**{s['document_title']}**\n{s['snippet']}")
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "No matching college documents found."
             return {
                 "query": query,
                 "answer": (
-                    f"**IIPS DAVV Official Records for {first_doc_title}:**\n\n"
-                    f"{combined_context.replace('---', '').strip()[:800]}\n\n"
-                    f"*Note: Please review the attached official document for further details.*"
+                    f"I found relevant official documents but could not generate an AI answer right now.\n\n"
+                    f"{fallback_body}\n\n"
+                    f"*Please open the original PDF for complete details.*"
                 ),
                 "sources": sources
             }
@@ -358,16 +367,16 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             )
 
         api_key = settings.GEMINI_API_KEY
-        if not api_key or "your-gemini-api-key" in api_key.lower():
+        if not api_key or "your-gemini-api-key" in api_key.lower() or not api_key.startswith("AIza"):
+            # API key missing or invalid — return clean excerpt from actual PDF text
+            excerpt = text[:600].strip() if text and len(text) > 40 else None
             return {
                 "title": document_title,
-                "summary": text[:600] if len(text) > 40 else (
-                    f"{document_title}: Official college curriculum and academic reference document. "
-                    f"Outlines unit-wise syllabus modules, examination pattern, and recommended textbooks."
+                "summary": (
+                    excerpt + "\n\n*(AI summary requires Gemini API key — open the original PDF for full details.)*"
+                    if excerpt
+                    else f"AI summary is not available. Please open the original PDF for '{document_title}'."
                 ),
-                "key_deadlines": "Please check the original document for exact dates.",
-                "eligibility": "Refer to official notice for branch/year criteria.",
-                "action_required": "Review full document for instructions."
             }
 
         try:
@@ -448,9 +457,15 @@ Provide a clear, structured summary of this document based on its actual content
             }
         except Exception as e:
             logger.error(f"Error generating summary: {e}")
+            # Return clean excerpt instead of raw dump
+            excerpt = text[:500].strip() if text and len(text) > 40 else None
             return {
                 "title": document_title,
-                "summary": text[:350] + "..."
+                "summary": (
+                    excerpt + "\n\n*(AI summary unavailable — please open the original PDF for full details.)*"
+                    if excerpt
+                    else "AI summary could not be generated. Please open the original PDF to read this document."
+                )
             }
 
 

@@ -3,7 +3,6 @@ Application Configuration Module
 Reads configuration from environment variables or .env file with default fallbacks.
 """
 import os
-import base64
 from pydantic_settings import BaseSettings
 from typing import Optional
 
@@ -21,11 +20,9 @@ class Settings(BaseSettings):
     # Database Configuration (Defaults to SQLite for easy local dev, can be overridden with PostgreSQL URL)
     DATABASE_URL: str = "sqlite:///./college_assistant.db"
 
-    # Google Gemini AI Key
-    GEMINI_API_KEY: Optional[str] = (
-        os.getenv("GEMINI_API_KEY")
-        or base64.b64decode("QVEuQWI4Uk42Sk5Yb08xZE9vMDdMdnlSUE9wbmVwbTBZRXAtdUJlMlBoa21mT2VSQVVKdmc=").decode("utf-8")
-    )
+    # Google Gemini AI Key — set GEMINI_API_KEY in Render environment variables
+    # Get a free key at: https://aistudio.google.com/app/apikey (starts with AIza...)
+    GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "")
 
     # Storage Paths
     UPLOAD_DIR: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
