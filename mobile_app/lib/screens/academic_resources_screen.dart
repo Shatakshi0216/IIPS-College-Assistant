@@ -6,11 +6,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../config/api_config.dart';
 import '../models/user_model.dart';
 import '../models/document_model.dart';
 import '../services/document_service.dart';
 import '../services/chat_service.dart';
+import '../constants/academic_programs.dart';
 
 class AcademicResourcesScreen extends StatefulWidget {
   final UserModel user;
@@ -18,7 +18,8 @@ class AcademicResourcesScreen extends StatefulWidget {
   const AcademicResourcesScreen({super.key, required this.user});
 
   @override
-  State<AcademicResourcesScreen> createState() => _AcademicResourcesScreenState();
+  State<AcademicResourcesScreen> createState() =>
+      _AcademicResourcesScreenState();
 }
 
 class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
@@ -32,7 +33,7 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
   int _selectedSemester = 0; // 0 = ALL
   String _selectedType = 'ALL'; // ALL, syllabus, question_paper, notes
 
-  final List<String> _branches = ['ALL', 'CSE', 'IT', 'ECE', 'ME', 'CE', 'EE'];
+  final List<String> _branches = ['ALL', ...academicPrograms];
   final List<int> _semesters = [0, 1, 2, 3, 4, 5, 6, 7, 8];
 
   @override
@@ -42,6 +43,11 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
     if (widget.user.isStudent && widget.user.studentProfile != null) {
       _selectedBranch = widget.user.studentProfile!.branch;
       _selectedSemester = widget.user.studentProfile!.semester;
+      // Keep profile values valid even for programmes not in the default dropdown list.
+      if (!_branches.contains(_selectedBranch)) { _branches.add(_selectedBranch); }
+      if (!_semesters.contains(_selectedSemester)) {
+        _semesters.add(_selectedSemester);
+      }
     }
     _loadResources();
   }
@@ -52,6 +58,7 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
     final list = await _docService.getAcademicResources(
       branch: _selectedBranch,
       semester: _selectedSemester,
+      year: widget.user.studentProfile?.year,
       resourceType: _selectedType,
     );
 
@@ -84,7 +91,8 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
               Expanded(
                 child: Text(
                   doc.title,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -138,16 +146,21 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                         value: _selectedBranch,
                         decoration: InputDecoration(
                           labelText: 'Branch',
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
                         ),
                         items: _branches
-                            .map((b) => DropdownMenuItem(value: b, child: Text(b)))
+                            .map((b) =>
+                                DropdownMenuItem(value: b, child: Text(b)))
                             .toList(),
-                        onChanged: (val) {
-                          setState(() => _selectedBranch = val!);
-                          _loadResources();
-                        },
+                        onChanged: widget.user.isStudent
+                            ? null
+                            : (val) {
+                                setState(() => _selectedBranch = val!);
+                                _loadResources();
+                              },
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -158,8 +171,10 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                         value: _selectedSemester,
                         decoration: InputDecoration(
                           labelText: 'Semester',
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10)),
                         ),
                         items: _semesters
                             .map((s) => DropdownMenuItem(
@@ -167,10 +182,12 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                                   child: Text(s == 0 ? 'All Sem' : 'Sem $s'),
                                 ))
                             .toList(),
-                        onChanged: (val) {
-                          setState(() => _selectedSemester = val!);
-                          _loadResources();
-                        },
+                        onChanged: widget.user.isStudent
+                            ? null
+                            : (val) {
+                                setState(() => _selectedSemester = val!);
+                                _loadResources();
+                              },
                       ),
                     ),
                   ],
@@ -205,11 +222,13 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.library_books_outlined, size: 54, color: Colors.grey.shade400),
+                            Icon(Icons.library_books_outlined,
+                                size: 54, color: Colors.grey.shade400),
                             const SizedBox(height: 12),
                             Text(
                               'No academic resources found',
-                              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.grey.shade600, fontSize: 16),
                             ),
                           ],
                         ),
@@ -238,18 +257,27 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
                                       children: [
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
                                           decoration: BoxDecoration(
-                                            color: isSyllabus ? Colors.indigo.shade50 : Colors.teal.shade50,
-                                            borderRadius: BorderRadius.circular(6),
+                                            color: isSyllabus
+                                                ? Colors.indigo.shade50
+                                                : Colors.teal.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(6),
                                           ),
                                           child: Text(
-                                            doc.category.toUpperCase().replaceAll('_', ' '),
+                                            doc.category
+                                                .toUpperCase()
+                                                .replaceAll('_', ' '),
                                             style: TextStyle(
-                                              color: isSyllabus ? Colors.indigo.shade800 : Colors.teal.shade800,
+                                              color: isSyllabus
+                                                  ? Colors.indigo.shade800
+                                                  : Colors.teal.shade800,
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                             ),
@@ -258,7 +286,9 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                                         if (res?.examYear != null)
                                           Text(
                                             'Exam Year: ${res!.examYear}',
-                                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                                            style: TextStyle(
+                                                color: Colors.grey.shade600,
+                                                fontSize: 12),
                                           ),
                                       ],
                                     ),
@@ -278,7 +308,9 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                                     if (res != null)
                                       Text(
                                         '${res.branch} • Sem ${res.semester}${res.subjectCode != null ? " • ${res.subjectCode}" : ""}',
-                                        style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                                        style: TextStyle(
+                                            color: Colors.grey.shade600,
+                                            fontSize: 13),
                                       ),
                                     const SizedBox(height: 14),
 
@@ -288,29 +320,51 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
                                         Expanded(
                                           child: OutlinedButton.icon(
                                             onPressed: () async {
-                                              final url = Uri.parse(ApiConfig.documentFileUrl(doc.id));
-                                              if (await canLaunchUrl(url)) {
-                                                await launchUrl(url, mode: LaunchMode.externalApplication);
+                                              final url = await _docService
+                                                  .getDocumentDownloadUrl(
+                                                      doc.id);
+                                              if (!mounted) return;
+                                              if (url == null ||
+                                                  !await launchUrl(
+                                                      Uri.parse(url),
+                                                      mode: LaunchMode
+                                                          .externalApplication)) {
+                                                ScaffoldMessenger.of(context)
+                                                    .showSnackBar(
+                                                  const SnackBar(
+                                                      content: Text(
+                                                          'Unable to open this PDF. Please try again.')),
+                                                );
                                               }
                                             },
-                                            icon: const Icon(Icons.picture_as_pdf, size: 18),
+                                            icon: const Icon(
+                                                Icons.picture_as_pdf,
+                                                size: 18),
                                             label: const Text('Open PDF'),
                                             style: OutlinedButton.styleFrom(
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8)),
                                             ),
                                           ),
                                         ),
                                         const SizedBox(width: 8),
                                         Expanded(
                                           child: ElevatedButton.icon(
-                                            onPressed: () => _showAiSummary(doc),
-                                            icon: const Icon(Icons.auto_awesome, size: 18),
+                                            onPressed: () =>
+                                                _showAiSummary(doc),
+                                            icon: const Icon(Icons.auto_awesome,
+                                                size: 18),
                                             label: const Text('AI Summary'),
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.purple.shade50,
-                                              foregroundColor: Colors.purple.shade900,
+                                              backgroundColor:
+                                                  Colors.purple.shade50,
+                                              foregroundColor:
+                                                  Colors.purple.shade900,
                                               elevation: 0,
-                                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                              shape: RoundedRectangleBorder(
+                                                  borderRadius:
+                                                      BorderRadius.circular(8)),
                                             ),
                                           ),
                                         ),

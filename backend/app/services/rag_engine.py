@@ -18,9 +18,9 @@ _ssl_ctx = ssl.create_default_context()
 
 # Ordered list of model names to try (newest first, all confirmed working)
 GEMINI_MODELS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
 ]
 
 
@@ -371,16 +371,76 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             }
 
         try:
-            prompt = f"""You are an academic summarizer. Summarize this official college document titled '{document_title}'.
-Provide:
-1. A concise 3-sentence summary of the main announcement.
-2. Important deadlines or dates mentioned.
-3. Eligibility criteria (branch, year, CGPA).
-4. Required action for students.
+            # Build a category-aware prompt using clues from the title/text
+            title_lower = document_title.lower()
+            if any(w in title_lower for w in ["atkt", "back", "compartment", "exam form", "examination form"]):
+                doc_type_hint = "ATKT/Back Examination Form"
+                specific_guidance = """Extract and present:
+- What the ATKT/back exam form is for and who is eligible (failed subjects/papers)
+- Important submission deadline and exam dates
+- Required documents needed to fill the form
+- Fees (if mentioned)
+- How/where to submit the form
+- Any specific conditions or instructions"""
+            elif any(w in title_lower for w in ["placement", "recruitment", "drive", "campus", "hire", "job"]):
+                doc_type_hint = "Placement/Recruitment Notice"
+                specific_guidance = """Extract and present:
+- Company or organization name
+- Eligible programmes and batches/years
+- Job role or position
+- Required skills and eligibility criteria (CGPA, etc.)
+- Application/registration deadline
+- How to apply or register
+- Compensation/package (if mentioned)"""
+            elif any(w in title_lower for w in ["syllabus", "curriculum", "course"]):
+                doc_type_hint = "Academic Syllabus"
+                specific_guidance = """Extract and present:
+- Course/subject name and code
+- Units/modules covered
+- Key topics in each unit
+- Examination pattern (if mentioned)
+- Recommended textbooks (if mentioned)"""
+            elif any(w in title_lower for w in ["exam", "schedule", "timetable", "time table", "date sheet"]):
+                doc_type_hint = "Examination Schedule"
+                specific_guidance = """Extract and present:
+- ALL exam dates and subjects - list every entry completely
+- Exam timings
+- Venue information if mentioned
+- Instructions for students"""
+            elif any(w in title_lower for w in ["attendance", "rule", "circular", "policy", "regulation"]):
+                doc_type_hint = "College Rule/Circular"
+                specific_guidance = """Extract and present:
+- Main announcement or policy being communicated
+- Who it applies to
+- Key requirements or conditions
+- Important dates or deadlines
+- Action required from students/faculty"""
+            else:
+                doc_type_hint = "College Notice"
+                specific_guidance = """Extract and present:
+- Main purpose of this notice
+- Who it applies to
+- Key information, dates, and deadlines
+- Required actions
+- Contact information if provided"""
+
+            prompt = f"""You are the official AI document assistant for IIPS DAVV (International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya).
+
+Analyze this {doc_type_hint} document titled: "{document_title}"
+
+{specific_guidance}
+
+IMPORTANT RULES:
+- Use ONLY information from the document text provided below.
+- Do NOT make up dates, fees, or eligibility criteria not mentioned in the document.
+- If information is not found, say "Not specified in the document".
+- Format the response clearly with bullet points.
+- Be specific and actionable.
 
 DOCUMENT TEXT:
 {text[:10000]}
-"""
+
+Provide a clear, structured summary of this document based on its actual content:"""
             summary_text = _call_gemini(prompt, api_key)
             return {
                 "title": document_title,

@@ -59,30 +59,20 @@ def summarize_document(
     current_user: User = Depends(get_current_user),
 ):
     """
-    Generates a concise summary of an uploaded college document,
-    highlighting main announcements, deadlines, eligibility, and action items.
+    Generates a concise AI summary of an uploaded college document from its actual PDF content.
+    Always regenerates from the PDF so summaries reflect real document content, not stored placeholders.
     """
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc or not can_access_document(doc, current_user):
         raise HTTPException(status_code=404, detail="Document not found")
 
-    # If already has extracted summary in NoticeMetadata, reuse it
-    if doc.notice_metadata and doc.notice_metadata.summary:
-        return {
-            "document_id": doc.id,
-            "title": doc.title,
-            "summary": doc.notice_metadata.summary,
-            "key_deadlines": doc.notice_metadata.deadline,
-            "eligibility": (
-                f"Branches: {', '.join(doc.notice_metadata.eligible_branches or ['ALL'])}, "
-                f"Years: {', '.join(map(str, doc.notice_metadata.eligible_years or ['ALL']))}, "
-                f"Min CGPA: {doc.notice_metadata.min_cgpa or 'None'}"
-            ),
-            "action_required": doc.notice_metadata.action_required
-        }
-
-    # Otherwise extract text and summarize on the fly
-    raw_text = doc.raw_text or ""
+    # Always regenerate from actual PDF content.
+    # The stored notice_metadata.summary may be a generic placeholder from upload time.
+    raw_text = ""
+    try:
+        raw_text = doc.raw_text or ""
+    except Exception:
+        pass
     if not raw_text and doc.file_data:
         try:
             raw_text = extract_text_from_pdf_bytes(bytes(doc.file_data))
@@ -95,11 +85,30 @@ def summarize_document(
             raw_text = ""
 
     summary_data = rag_engine.summarize_document(doc.title, raw_text, document_id=doc.id)
+
+    # Build eligibility string from stored metadata if available
+    eligibility_str = None
+    if doc.notice_metadata:
+        branches = doc.notice_metadata.eligible_branches or ["ALL"]
+        years = doc.notice_metadata.eligible_years or ["ALL"]
+        cgpa = doc.notice_metadata.min_cgpa
+        eligibility_str = (
+            f"Branches: {', '.join(str(b) for b in branches)}, "
+            f"Years: {', '.join(str(y) for y in years)}"
+            + (f", Min CGPA: {cgpa}" if cgpa and cgpa > 0 else "")
+        )
+
     return {
         "document_id": doc.id,
         "title": doc.title,
         "summary": summary_data.get("summary", "Summary unavailable."),
-        "key_deadlines": summary_data.get("key_deadlines"),
-        "eligibility": summary_data.get("eligibility"),
-        "action_required": summary_data.get("action_required")
+        "key_deadlines": (
+            summary_data.get("key_deadlines")
+            or (doc.notice_metadata.deadline if doc.notice_metadata else None)
+        ),
+        "eligibility": eligibility_str or summary_data.get("eligibility"),
+        "action_required": (
+            summary_data.get("action_required")
+            or (doc.notice_metadata.action_required if doc.notice_metadata else None)
+        ),
     }

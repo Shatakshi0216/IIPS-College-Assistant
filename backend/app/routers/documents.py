@@ -79,7 +79,7 @@ async def upload_document(
         notice_meta = NoticeMetadata(
             document_id=new_doc.id,
             title=ai_data.get("title") or title,
-            summary=ai_data.get("summary") or f"Official document: {title}. Please open the PDF to view all details.",
+            summary=ai_data.get("summary") or f"{title}. Please open the original PDF document for complete details.",
             action_required=ai_data.get("action_required"),
             deadline=ai_data.get("deadline"),
             eligible_branches=ai_data.get("eligible_branches", ["ALL"]),

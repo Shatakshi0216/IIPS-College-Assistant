@@ -1,3 +1,4 @@
+
 /// ==============================================================================
 /// FILE: lib/screens/main_navigation_screen.dart
 /// PURPOSE: Main shell navigation with responsive bottom navigation bar.
@@ -25,6 +26,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   int _currentIndex = 0;
   late final List<Widget> _screens;
 
+  final GlobalKey<NoticeFeedScreenState> _noticeKey =
+      GlobalKey<NoticeFeedScreenState>();
+
+  void _handleUploadSuccess() {
+    _noticeKey.currentState?.refreshFeed();
+
+    if (!mounted) return;
+    setState(() => _currentIndex = 0);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -33,15 +44,24 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     if (isFaculty) {
       // Faculty navigation: Notices, Upload, AI Chat, Profile
       _screens = [
-        NoticeFeedScreen(user: widget.user),
-        UploadScreen(user: widget.user),
+        NoticeFeedScreen(
+          key: _noticeKey,
+          user: widget.user,
+        ),
+        UploadScreen(
+          user: widget.user,
+          onUploadSuccess: _handleUploadSuccess,
+        ),
         AiChatScreen(user: widget.user),
         ProfileScreen(user: widget.user),
       ];
     } else {
       // Student navigation: Notices, Resources, AI Chat, Alerts, Profile
       _screens = [
-        NoticeFeedScreen(user: widget.user),
+        NoticeFeedScreen(
+          key: _noticeKey,
+          user: widget.user,
+        ),
         AcademicResourcesScreen(user: widget.user),
         AiChatScreen(user: widget.user),
         NotificationsScreen(user: widget.user),

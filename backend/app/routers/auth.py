@@ -38,69 +38,54 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
     "/register",
     response_model=UserResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Register a new Student or Faculty user"
+    summary="Register a new Student user"
 )
 def register(user_in: UserRegister, db: Session = Depends(get_db)):
-    """
-    Registers a new account in PostgreSQL:
-    1. Validates that the email is not already registered.
-    2. Hashes the plain-text password using bcrypt.
-    3. Saves the User row in 'users' table.
-    4. Automatically creates the linked 'student_profiles' or 'faculty_profiles' row.
-    """
-    # Step 1: Check for duplicate email
-    existing_user = db.query(User).filter(User.email == user_in.email).first()
+    # Public registration is restricted to students.
+    # Faculty and admin accounts must be provisioned separately.
+
+    if not user_in.student_profile:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Student profile information is required."
+        )
+
+    existing_user = db.query(User).filter(
+        User.email == user_in.email
+    ).first()
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email already exists."
         )
 
-    # Step 2: Hash the password (Never store plain passwords!)
-    hashed_pwd = get_password_hash(user_in.password)
-    
-    # Step 3: Create parent User record
     new_user = User(
         email=user_in.email,
-        hashed_password=hashed_pwd,
+        hashed_password=get_password_hash(user_in.password),
         full_name=user_in.full_name,
-        role=user_in.role.lower(),
+        role="student",
     )
+
     db.add(new_user)
-    db.flush()  # flushes SQL so new_user.id is generated before creating the profile
+    db.flush()
 
-    # Step 4: Create linked role-specific profile
-    if new_user.role == "student":
-        profile_data = user_in.student_profile
-        if not profile_data:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Student profile information (branch, year, semester) is required for student accounts."
-            )
-        student_profile = StudentProfile(
-            user_id=new_user.id,
-            roll_number=profile_data.roll_number,
-            branch=profile_data.branch.upper(),
-            year=profile_data.year,
-            semester=profile_data.semester,
-            section=profile_data.section,
-            cgpa=profile_data.cgpa,
-        )
-        db.add(student_profile)
+    profile_data = user_in.student_profile
 
-    elif new_user.role in ["faculty", "admin"]:
-        profile_data = user_in.faculty_profile
-        faculty_profile = FacultyProfile(
-            user_id=new_user.id,
-            employee_id=profile_data.employee_id if profile_data else None,
-            department=profile_data.department if profile_data else "General",
-            designation=profile_data.designation if profile_data else "Faculty",
-        )
-        db.add(faculty_profile)
+    student_profile = StudentProfile(
+        user_id=new_user.id,
+        roll_number=profile_data.roll_number,
+        branch=profile_data.branch.upper(),
+        year=profile_data.year,
+        semester=profile_data.semester,
+        section=profile_data.section,
+        cgpa=profile_data.cgpa,
+    )
 
-    # Step 5: Commit transaction to PostgreSQL
+    db.add(student_profile)
     db.commit()
     db.refresh(new_user)
+
     return new_user
 
 

@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 _ssl_ctx = ssl.create_default_context()
 
 GEMINI_MODELS = [
-    "gemini-3.5-flash-lite",
-    "gemini-3.5-flash",
-    "gemini-flash-latest",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
 ]
 
 
@@ -63,10 +63,10 @@ Analyze the document carefully and return ONLY a valid JSON object with the foll
 
 {
   "title": "A concise, clear title for this notice",
-  "summary": "A 2 to 3 sentence concise summary explaining what this notice is about",
+  "summary": "A specific 2 to 4 sentence summary that explains what this notice is about, who it's for, key dates/deadlines, and what students need to do. Extract ACTUAL specifics from the document — do NOT write generic placeholder text.",
   "action_required": "What the student needs to do (e.g. submit form, register online, pay fee), or null if purely informational",
   "deadline": "The final date or deadline mentioned in YYYY-MM-DD format if identifiable, or a human readable date string like 'October 25, 2026', or null",
-  "eligible_branches": ["List of eligible branches/courses like MCA, M.Tech, MBA, BCA, B.Com, IT, CSE, or ['ALL'] if open to all"],
+  "eligible_branches": ["List of eligible programmes at IIPS DAVV: MCA, M.Tech, MBA (MS), MBA (TA), BCA, B.Com (Hons), IT, CSE — or ['ALL'] if open to all students"],
   "eligible_years": [List of eligible years as integers, e.g. [3, 4], or [1, 2, 3, 4, 5] if for all students],
   "min_cgpa": 0.0, // Minimum CGPA required as a float (e.g. 7.5), or 0.0 if no CGPA requirement
   "contact_info": "Contact email, phone, or faculty name mentioned, or null",
@@ -119,7 +119,8 @@ def _fallback_metadata_extractor(text: str) -> Dict[str, Any]:
     guessed_title = first_lines[0] if first_lines else "College Official Notice"
 
     branches = []
-    for b in ["CSE", "IT", "ECE", "ME", "CE", "EE"]:
+    iips_programmes = ["MCA", "M.TECH", "MBA", "BCA", "B.COM", "IT", "CSE"]
+    for b in iips_programmes:
         if b in text.upper():
             branches.append(b)
     if not branches:
@@ -134,7 +135,7 @@ def _fallback_metadata_extractor(text: str) -> Dict[str, Any]:
 
     return {
         "title": guessed_title[:100],
-        "summary": "Official college notice processed. Please review the full document for detailed instructions.",
+        "summary": f"{guessed_title}. This is an official IIPS DAVV notice. Please open the original PDF for complete and accurate details.",
         "action_required": "Please read the notice carefully and complete necessary steps before the deadline.",
         "deadline": None,
         "eligible_branches": branches,

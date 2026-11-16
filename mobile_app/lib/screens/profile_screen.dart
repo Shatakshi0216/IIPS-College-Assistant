@@ -81,20 +81,27 @@ class ProfileScreen extends StatelessWidget {
                 children: [
                   CircleAvatar(
                     radius: 36,
-                    backgroundColor: user.isFaculty ? Colors.purple.shade100 : Colors.blue.shade100,
+                    backgroundColor: user.isFaculty
+                        ? Colors.purple.shade100
+                        : Colors.blue.shade100,
                     child: Text(
-                      user.fullName.isNotEmpty ? user.fullName[0].toUpperCase() : 'U',
+                      user.fullName.isNotEmpty
+                          ? user.fullName[0].toUpperCase()
+                          : 'U',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
-                        color: user.isFaculty ? Colors.purple.shade800 : Colors.blue.shade800,
+                        color: user.isFaculty
+                            ? Colors.purple.shade800
+                            : Colors.blue.shade800,
                       ),
                     ),
                   ),
                   const SizedBox(height: 12),
                   Text(
                     user.fullName,
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   Text(
@@ -103,9 +110,12 @@ class ProfileScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
-                      color: user.isFaculty ? Colors.purple.shade50 : Colors.blue.shade50,
+                      color: user.isFaculty
+                          ? Colors.purple.shade50
+                          : Colors.blue.shade50,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
@@ -113,7 +123,9 @@ class ProfileScreen extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: user.isFaculty ? Colors.purple.shade700 : Colors.blue.shade700,
+                        color: user.isFaculty
+                            ? Colors.purple.shade700
+                            : Colors.blue.shade700,
                       ),
                     ),
                   ),
@@ -178,7 +190,8 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 12),
                     _buildProfileRow('Department', fac.department),
-                    _buildProfileRow('Designation', fac.designation ?? 'Faculty Member'),
+                    _buildProfileRow(
+                        'Designation', fac.designation ?? 'Faculty Member'),
                     if (fac.employeeId != null)
                       _buildProfileRow('Employee ID', fac.employeeId!),
                   ],
@@ -196,7 +209,9 @@ class ProfileScreen extends StatelessWidget {
                 backgroundColor: Colors.red.shade50,
                 foregroundColor: Colors.red.shade700,
                 minimumSize: const Size.fromHeight(48),
-                shape: RoundedRectangle.circular(12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 elevation: 0,
               ),
             ),
@@ -212,8 +227,11 @@ class ProfileScreen extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(label, style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text(label,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+          Text(value,
+              style:
+                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
         ],
       ),
     );

@@ -5,7 +5,6 @@
 
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import '../config/api_config.dart';
 import '../models/user_model.dart';
 import '../models/document_model.dart';
 import '../services/document_service.dart';
@@ -13,14 +12,19 @@ import '../services/chat_service.dart';
 
 class NoticeFeedScreen extends StatefulWidget {
   final UserModel user;
+  final GlobalKey<NoticeFeedScreenState>? refreshKey;
 
-  const NoticeFeedScreen({super.key, required this.user});
+  const NoticeFeedScreen({
+   super.key,
+   required this.user,
+   this.refreshKey,
+ });
 
   @override
-  State<NoticeFeedScreen> createState() => _NoticeFeedScreenState();
+  State<NoticeFeedScreen> createState() => NoticeFeedScreenState();
 }
 
-class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
+class NoticeFeedScreenState extends State<NoticeFeedScreen> {
   final DocumentService _docService = DocumentService();
   final ChatService _chatService = ChatService();
 
@@ -31,10 +35,10 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
   @override
   void initState() {
     super.initState();
-    _loadFeed();
+    refreshFeed();
   }
 
-  Future<void> _loadFeed() async {
+  Future<void> refreshFeed() async {
     setState(() => _isLoading = true);
     final list = await _docService.getPersonalizedFeed();
     setState(() {
@@ -48,7 +52,8 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
     final q = _searchQuery.toLowerCase();
     return _notices.where((doc) {
       final titleMatch = doc.title.toLowerCase().contains(q);
-      final summaryMatch = doc.noticeMetadata?.summary?.toLowerCase().contains(q) ?? false;
+      final summaryMatch =
+          doc.noticeMetadata?.summary?.toLowerCase().contains(q) ?? false;
       return titleMatch || summaryMatch;
     }).toList();
   }
@@ -91,7 +96,8 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.blue.shade50,
                           borderRadius: BorderRadius.circular(6),
@@ -108,7 +114,8 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                       if (meta?.isUrgent == true) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
                             color: Colors.red.shade50,
                             borderRadius: BorderRadius.circular(6),
@@ -192,12 +199,14 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.assignment_turned_in_outlined, color: Colors.orange, size: 20),
+                          const Icon(Icons.assignment_turned_in_outlined,
+                              color: Colors.orange, size: 20),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
                               meta!.actionRequired!,
-                              style: TextStyle(color: Colors.brown.shade800, fontSize: 14),
+                              style: TextStyle(
+                                  color: Colors.brown.shade800, fontSize: 14),
                             ),
                           ),
                         ],
@@ -223,19 +232,23 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                     children: [
                       if (meta?.deadline != null)
                         Chip(
-                          avatar: const Icon(Icons.calendar_today, size: 16, color: Colors.redAccent),
+                          avatar: const Icon(Icons.calendar_today,
+                              size: 16, color: Colors.redAccent),
                           label: Text('Deadline: ${meta!.deadline}'),
                           backgroundColor: Colors.red.shade50,
                         ),
                       if (meta?.eligibleBranches.isNotEmpty == true)
                         Chip(
-                          avatar: const Icon(Icons.apartment, size: 16, color: Colors.blueAccent),
-                          label: Text('Branches: ${meta!.eligibleBranches.join(", ")}'),
+                          avatar: const Icon(Icons.apartment,
+                              size: 16, color: Colors.blueAccent),
+                          label: Text(
+                              'Branches: ${meta!.eligibleBranches.join(", ")}'),
                           backgroundColor: Colors.blue.shade50,
                         ),
                       if (meta != null && meta.minCgpa > 0)
                         Chip(
-                          avatar: const Icon(Icons.grade, size: 16, color: Colors.purple),
+                          avatar: const Icon(Icons.grade,
+                              size: 16, color: Colors.purple),
                           label: Text('Min CGPA: ${meta.minCgpa}'),
                           backgroundColor: Colors.purple.shade50,
                         ),
@@ -246,19 +259,28 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                   // Open PDF Button
                   ElevatedButton.icon(
                     onPressed: () async {
-                      final url = Uri.parse(ApiConfig.documentFileUrl(doc.id));
-                      if (await canLaunchUrl(url)) {
-                        await launchUrl(url, mode: LaunchMode.externalApplication);
+                      final url =
+                          await _docService.getDocumentDownloadUrl(doc.id);
+                      if (!mounted) return;
+                      if (url == null ||
+                          !await launchUrl(Uri.parse(url),
+                              mode: LaunchMode.externalApplication)) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text(
+                                  'Unable to open this PDF. Please try again.')),
+                        );
                       }
                     },
                     icon: const Icon(Icons.picture_as_pdf),
                     label: const Text('View Original PDF'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.blueAccent,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangle.circular(10),
-                    ),
+                        backgroundColor: Colors.blueAccent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        )),
                   ),
                 ],
               ),
@@ -322,17 +344,19 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Icon(Icons.inbox_outlined, size: 54, color: Colors.grey.shade400),
+                            Icon(Icons.inbox_outlined,
+                                size: 54, color: Colors.grey.shade400),
                             const SizedBox(height: 12),
                             Text(
                               'No notices found',
-                              style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+                              style: TextStyle(
+                                  color: Colors.grey.shade600, fontSize: 16),
                             ),
                           ],
                         ),
                       )
                     : RefreshIndicator(
-                        onRefresh: _loadFeed,
+                        onRefresh: refreshFeed,
                         child: ListView.builder(
                           padding: const EdgeInsets.all(12),
                           itemCount: _filteredNotices.length,
@@ -353,17 +377,21 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                                 child: Padding(
                                   padding: const EdgeInsets.all(16),
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       // Top Badges
                                       Row(
-                                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 8, vertical: 3),
                                             decoration: BoxDecoration(
                                               color: Colors.blue.shade50,
-                                              borderRadius: BorderRadius.circular(6),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
                                             ),
                                             child: Text(
                                               doc.category.toUpperCase(),
@@ -377,7 +405,9 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                                           if (meta?.deadline != null)
                                             Row(
                                               children: [
-                                                const Icon(Icons.timer_outlined, size: 14, color: Colors.redAccent),
+                                                const Icon(Icons.timer_outlined,
+                                                    size: 14,
+                                                    color: Colors.redAccent),
                                                 const SizedBox(width: 4),
                                                 Text(
                                                   meta!.deadline!,
@@ -410,7 +440,9 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                                           meta!.summary!,
                                           maxLines: 2,
                                           overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                                          style: TextStyle(
+                                              color: Colors.grey.shade700,
+                                              fontSize: 13),
                                         ),
                                       const SizedBox(height: 12),
 
@@ -419,28 +451,43 @@ class _NoticeFeedScreenState extends State<NoticeFeedScreen> {
                                         spacing: 6,
                                         runSpacing: 4,
                                         children: [
-                                          if (meta?.eligibleBranches.isNotEmpty == true)
+                                          if (meta?.eligibleBranches
+                                                  .isNotEmpty ==
+                                              true)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2),
                                               decoration: BoxDecoration(
                                                 color: Colors.grey.shade100,
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                               ),
                                               child: Text(
                                                 'Branch: ${meta!.eligibleBranches.join(", ")}',
-                                                style: const TextStyle(fontSize: 11, color: Colors.black87),
+                                                style: const TextStyle(
+                                                    fontSize: 11,
+                                                    color: Colors.black87),
                                               ),
                                             ),
                                           if (meta != null && meta.minCgpa > 0)
                                             Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2),
                                               decoration: BoxDecoration(
                                                 color: Colors.purple.shade50,
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
                                               ),
                                               child: Text(
                                                 'Min CGPA: ${meta.minCgpa}',
-                                                style: TextStyle(fontSize: 11, color: Colors.purple.shade700),
+                                                style: TextStyle(
+                                                    fontSize: 11,
+                                                    color:
+                                                        Colors.purple.shade700),
                                               ),
                                             ),
                                         ],

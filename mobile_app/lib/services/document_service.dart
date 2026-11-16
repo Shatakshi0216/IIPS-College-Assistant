@@ -27,7 +27,8 @@ class DocumentService {
   Future<List<DocumentModel>> getPersonalizedFeed() async {
     try {
       final headers = await _getHeaders();
-      final response = await http.get(Uri.parse(ApiConfig.noticeFeedUrl), headers: headers);
+      final response =
+          await http.get(Uri.parse(ApiConfig.noticeFeedUrl), headers: headers);
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -61,11 +62,14 @@ class DocumentService {
       if (subjectName != null && subjectName.isNotEmpty) {
         queryParams['subject_name'] = subjectName;
       }
-      if (resourceType != null && resourceType.isNotEmpty && resourceType != 'ALL') {
+      if (resourceType != null &&
+          resourceType.isNotEmpty &&
+          resourceType != 'ALL') {
         queryParams['resource_type'] = resourceType.toLowerCase();
       }
 
-      final uri = Uri.parse(ApiConfig.resourcesUrl).replace(queryParameters: queryParams);
+      final uri = Uri.parse(ApiConfig.resourcesUrl)
+          .replace(queryParameters: queryParams);
       final headers = await _getHeaders();
       final response = await http.get(uri, headers: headers);
 
@@ -77,6 +81,26 @@ class DocumentService {
       print('Error fetching academic resources: $e');
     }
     return [];
+  }
+
+  /// Requests a short-lived, access-checked PDF link for external PDF viewing.
+  Future<String?> getDocumentDownloadUrl(int documentId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.documentsUrl}/$documentId/download-ticket'),
+        headers: headers,
+      );
+      if (response.statusCode != 200) return null;
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final ticket = data['ticket'] as String?;
+      if (ticket == null || ticket.isEmpty) return null;
+      return Uri.parse(ApiConfig.documentFileUrl(documentId))
+          .replace(queryParameters: {'ticket': ticket}).toString();
+    } catch (e) {
+      print('Error creating PDF download link: $e');
+      return null;
+    }
   }
 
   /// Uploads a PDF document via multipart request (Faculty/Admin only)
@@ -131,7 +155,8 @@ class DocumentService {
   Future<List<NotificationModel>> getNotifications() async {
     try {
       final headers = await _getHeaders();
-      final response = await http.get(Uri.parse(ApiConfig.notificationsUrl), headers: headers);
+      final response = await http.get(Uri.parse(ApiConfig.notificationsUrl),
+          headers: headers);
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
@@ -154,6 +179,40 @@ class DocumentService {
       return response.statusCode == 200;
     } catch (_) {
       return false;
+    }
+  }
+
+  /// Fetches ALL documents — used by Faculty/Admin in the Manage tab.
+  Future<List<DocumentModel>> getAllDocuments() async {
+    try {
+      final headers = await _getHeaders();
+      final response =
+          await http.get(Uri.parse(ApiConfig.documentsUrl), headers: headers);
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((j) => DocumentModel.fromJson(j)).toList();
+      }
+    } catch (e) {
+      print('Error fetching all documents: $e');
+    }
+    return [];
+  }
+
+  /// Deletes a document by ID (Faculty/Admin only).
+  Future<Map<String, dynamic>> deleteDocument(int documentId) async {
+    try {
+      final headers = await _getHeaders();
+      final response = await http.delete(
+        Uri.parse('${ApiConfig.documentsUrl}/$documentId'),
+        headers: headers,
+      );
+      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        return {'success': true, 'message': data['message'] ?? 'Deleted successfully'};
+      }
+      return {'success': false, 'message': data['detail'] ?? 'Delete failed'};
+    } catch (e) {
+      return {'success': false, 'message': 'Delete error: $e'};
     }
   }
 }
