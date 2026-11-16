@@ -72,6 +72,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ignore: unused_local_variable
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -258,6 +259,27 @@ class _LoginScreenState extends State<LoginScreen> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Quick Demo Fill (for presentation)
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 8,
+                    children: [
+                      TextButton(
+                        onPressed: () =>
+                            _fillDemo('admin@iips.ac.in', 'admin123'),
+                        child: const Text('Admin Demo',
+                            style: TextStyle(fontSize: 11)),
+                      ),
+                      TextButton(
+                        onPressed: () =>
+                            _fillDemo('faculty@iips.ac.in', 'faculty123'),
+                        child: const Text('Faculty Demo',
+                            style: TextStyle(fontSize: 11)),
                       ),
                     ],
                   ),

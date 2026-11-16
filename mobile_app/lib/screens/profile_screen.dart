@@ -6,7 +6,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_model.dart';
 import '../services/auth_service.dart';
-import '../config/api_config.dart';
 import 'login_screen.dart';
 
 class ProfileScreen extends StatelessWidget {

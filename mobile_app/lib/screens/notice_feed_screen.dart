@@ -282,6 +282,70 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                           borderRadius: BorderRadius.circular(10),
                         )),
                   ),
+                  const SizedBox(height: 10),
+                  // AI Summary Button — regenerates from real PDF content
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      Navigator.of(ctx).pop(); // close bottom sheet first
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) =>
+                            const Center(child: CircularProgressIndicator()),
+                      );
+                      final result =
+                          await _chatService.summarizeDocument(doc.id);
+                      if (!mounted) return;
+                      Navigator.of(context).pop(); // close loader
+                      if (result['success'] == true) {
+                        final data = result['data'];
+                        showDialog(
+                          context: context,
+                          builder: (dctx) => AlertDialog(
+                            title: const Row(
+                              children: [
+                                Icon(Icons.auto_awesome, color: Colors.purple),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'AI Summary',
+                                    style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            content: SingleChildScrollView(
+                              child: Text(
+                                data['summary'] ?? 'Summary not available.',
+                                style: const TextStyle(height: 1.5),
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(dctx).pop(),
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content:
+                                  Text('Failed to generate AI summary.')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.auto_awesome, size: 18),
+                    label: const Text('Generate AI Summary'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
                 ],
               ),
             );
