@@ -22,6 +22,7 @@ HOW IT WORKS:
 """
 
 import os
+from io import BytesIO
 from typing import List, Dict, Any
 from pypdf import PdfReader
 
@@ -29,6 +30,19 @@ try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
 except ImportError:
     from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+
+def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
+    """Extract text directly from PDF bytes without temporary filesystem storage."""
+    if not pdf_bytes:
+        return ""
+    reader = PdfReader(BytesIO(pdf_bytes))
+    text_content = []
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text_content.append(page_text.strip())
+    return "\n\n".join(text_content)
 
 
 def extract_text_from_pdf(file_path: str) -> str:

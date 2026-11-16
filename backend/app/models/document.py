@@ -15,7 +15,7 @@ Why not store the raw PDF files directly inside PostgreSQL (as BLOBs)?
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, DateTime, Text, JSON, LargeBinary
 from sqlalchemy.orm import relationship, deferred
 
 from app.database import Base
@@ -38,6 +38,10 @@ class Document(Base):
 
     # Safe filesystem path where the PDF is stored (e.g. "uploads/notices/1709...pdf")
     file_path = Column(String, nullable=False)
+
+    # Persistent PDF bytes stored in PostgreSQL (BYTEA) / SQLite (BLOB).
+    # This avoids relying on Render's ephemeral local filesystem.
+    file_data = Column(LargeBinary, nullable=True)
 
     # Size of the PDF file in bytes
     file_size_bytes = Column(Integer, default=0)

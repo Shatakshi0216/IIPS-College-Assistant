@@ -1,14 +1,12 @@
-"""
-Documents Router
-Handles PDF document uploads by faculty, automated text extraction,
-Gemini metadata enrichment, vector chunk indexing, and document retrieval.
-"""
+"""Document upload, retrieval, access control, and authenticated PDF delivery."""
 import os
-import shutil
 import time
+from datetime import timedelta
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
-from fastapi.responses import FileResponse
+
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
+from fastapi.responses import Response, FileResponse
+from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -17,13 +15,15 @@ from app.models.user import User
 from app.models.document import Document, NoticeMetadata, AcademicResource
 from app.models.notification import Notification
 from app.schemas.document import DocumentResponse
-from app.services.auth_service import get_current_user, require_role
-from app.services.pdf_processor import extract_text_from_pdf, chunk_document_text
+from app.services.auth_service import get_current_user, require_role, create_access_token
+from app.services.document_access import can_access_document
+from app.services.pdf_processor import extract_text_from_pdf, extract_text_from_pdf_bytes, chunk_document_text
 from app.services.gemini_extractor import extract_notice_metadata
 from app.services.rag_engine import rag_engine
 from app.services.eligibility_engine import get_eligible_students
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
+MAX_PDF_BYTES = 25 * 1024 * 1024
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -31,7 +31,6 @@ async def upload_document(
     file: UploadFile = File(...),
     title: str = Form(...),
     category: str = Form(..., description="notice, syllabus, question_paper, circular, or rule"),
-    # Optional Academic Resource parameters:
     branch: Optional[str] = Form(None),
     year: Optional[int] = Form(None),
     semester: Optional[int] = Form(None),
@@ -39,60 +38,43 @@ async def upload_document(
     subject_code: Optional[str] = Form(None),
     exam_year: Optional[int] = Form(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["faculty", "admin"]))
+    current_user: User = Depends(require_role(["faculty", "admin"])),
 ):
-    """
-    Upload an official PDF document (Faculty/Admin only).
-    1. Validates and saves PDF to server storage.
-    2. Extracts full text using PyPDF.
-    3. If 'notice', Gemini extracts structured deadlines, eligibility & actions.
-    4. Chunks and indexes document text into RAG vector store for instant Q&A.
-    5. Dispatches notifications to eligible students.
-    """
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only PDF documents (.pdf) are supported."
-        )
+    """Upload and index a PDF. PDF bytes are stored in PostgreSQL, not Render disk."""
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF documents (.pdf) are supported.")
 
-    # 1. Determine subfolder and save file
-    subfolder = "notices" if category.lower() == "notice" else "resources"
-    dest_dir = os.path.join(settings.UPLOAD_DIR, subfolder)
-    os.makedirs(dest_dir, exist_ok=True)
+    pdf_bytes = await file.read()
+    if not pdf_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded PDF is empty.")
+    if len(pdf_bytes) > MAX_PDF_BYTES:
+        raise HTTPException(status_code=413, detail="PDF size must not exceed 25 MB.")
 
-    safe_filename = f"{int(time.time() * 1000)}_{file.filename.replace(' ', '_')}"
-    file_path = os.path.join(dest_dir, safe_filename)
-
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    file_size = os.path.getsize(file_path)
-
-    # 2. Create base Document record
+    category_value = category.lower().strip()
+    safe_filename = f"{int(time.time() * 1000)}_{os.path.basename(file.filename).replace(' ', '_')}"
     new_doc = Document(
         title=title,
-        file_name=file.filename,
-        file_path=file_path,
-        file_size_bytes=file_size,
-        category=category.lower(),
+        file_name=os.path.basename(file.filename),
+        file_path=f"database://documents/{safe_filename}",
+        file_data=pdf_bytes,
+        file_size_bytes=len(pdf_bytes),
+        category=category_value,
         uploaded_by_id=current_user.id,
-        is_processed=False
+        is_processed=False,
     )
     db.add(new_doc)
     db.flush()
 
-    # 3. Extract text from PDF
     try:
-        raw_text = extract_text_from_pdf(file_path)
-    except Exception as e:
-        raw_text = ""
+        raw_text = extract_text_from_pdf_bytes(pdf_bytes)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=f"Unable to read the uploaded PDF: {exc}")
 
-    # 3b. Persist raw_text in DB so it's always available after container restarts
     if raw_text:
         new_doc.raw_text = raw_text
 
-    # 4. If category is Notice, Rule, or Circular, extract structured metadata with Gemini
-    if category.lower() in ["notice", "rule", "circular"]:
+    if category_value in ["notice", "rule", "circular"]:
         ai_data = extract_notice_metadata(raw_text) if raw_text else {}
         notice_meta = NoticeMetadata(
             document_id=new_doc.id,
@@ -104,50 +86,27 @@ async def upload_document(
             eligible_years=ai_data.get("eligible_years", [1, 2, 3, 4, 5]),
             min_cgpa=float(ai_data.get("min_cgpa") or 0.0),
             contact_info=ai_data.get("contact_info"),
-            is_urgent=bool(ai_data.get("is_urgent", False))
+            is_urgent=bool(ai_data.get("is_urgent", False)),
         )
         db.add(notice_meta)
         db.flush()
-
-        # Trigger notifications for eligible students
-        eligible_students = get_eligible_students(db, notice_meta)
-        for st in eligible_students:
-            notif = Notification(
-                student_id=st.user_id,
-                document_id=new_doc.id,
+        for student in get_eligible_students(db, notice_meta):
+            db.add(Notification(
+                student_id=student.user_id, document_id=new_doc.id,
                 title=f"New Notice: {notice_meta.title}",
-                message=notice_meta.summary or "New college notice relevant to you has been published."
-            )
-            db.add(notif)
-
-    # 5. If category is Syllabus / Question Paper, store academic resource metadata
-    elif category.lower() in ["syllabus", "question_paper", "notes"]:
+                message=notice_meta.summary or "New college notice relevant to you has been published.",
+            ))
+    elif category_value in ["syllabus", "question_paper", "notes"]:
         if not branch or not year or not semester or not subject_name:
-            # Provide sensible defaults if not filled
-            branch = branch or "ALL"
-            year = year or 1
-            semester = semester or 1
-            subject_name = subject_name or title
+            raise HTTPException(status_code=422, detail="Academic resources require branch, year, semester, and subject name.")
+        db.add(AcademicResource(
+            document_id=new_doc.id, branch=branch.upper(), year=year, semester=semester,
+            subject_name=subject_name, subject_code=subject_code,
+            resource_type=category_value, exam_year=exam_year,
+        ))
 
-        resource = AcademicResource(
-            document_id=new_doc.id,
-            branch=branch.upper(),
-            year=year,
-            semester=semester,
-            subject_name=subject_name,
-            subject_code=subject_code,
-            resource_type=category.lower(),
-            exam_year=exam_year
-        )
-        db.add(resource)
-
-    # 6. Index text chunks into RAG Vector Store
     if raw_text:
-        chunks = chunk_document_text(
-            text=raw_text,
-            document_id=new_doc.id,
-            document_title=title
-        )
+        chunks = chunk_document_text(raw_text, new_doc.id, title)
         rag_engine.add_document_chunks(chunks)
         new_doc.is_processed = True
 
@@ -156,75 +115,96 @@ async def upload_document(
     return new_doc
 
 
+
+
+
 @router.get("", response_model=List[DocumentResponse])
 def list_documents(
     category: Optional[str] = None,
     limit: int = 50,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Lists uploaded college documents, optionally filtered by category."""
+    """Faculty/admin see all documents; students see eligible shared content and their own files."""
     query = db.query(Document)
+
     if category:
-        query = query.filter(Document.category == category.lower())
-    return query.order_by(Document.created_at.desc()).limit(limit).all()
+        query = query.filter(Document.category == category.lower().strip())
+
+    documents = query.order_by(Document.created_at.desc()).all()
+
+    if current_user.role == "student":
+        documents = [
+            doc for doc in documents
+            if can_access_document(doc, current_user)
+        ]
+
+    safe_limit = min(max(limit, 1), 100)
+    return documents[:safe_limit]
 
 
-@router.get("/{document_id}", response_model=DocumentResponse)
-def get_document_by_id(document_id: int, db: Session = Depends(get_db)):
-    """Retrieves metadata for a specific document."""
+@router.post("/{document_id}/download-ticket")
+def create_download_ticket(
+    document_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Issue a 3-minute, document-scoped URL ticket for opening the PDF externally."""
     doc = db.query(Document).filter(Document.id == document_id).first()
-    if not doc:
+    if not doc or not can_access_document(doc, current_user):
         raise HTTPException(status_code=404, detail="Document not found")
-    return doc
-
-
-@router.get("/{document_id}/file")
-def download_document_file(document_id: int, db: Session = Depends(get_db)):
-    """Downloads or streams the PDF file for in-app viewing."""
-    doc = db.query(Document).filter(Document.id == document_id).first()
-    if not doc or not os.path.exists(doc.file_path):
-        raise HTTPException(status_code=404, detail="File not found on server")
-
-    return FileResponse(
-        doc.file_path,
-        media_type="application/pdf",
-        filename=doc.file_name
+    ticket = create_access_token(
+        {"sub": str(current_user.id), "scope": "document_download", "document_id": doc.id},
+        expires_delta=timedelta(minutes=3),
     )
+    return {"ticket": ticket}
+
+
+@router.get("/{document_id}/file", name="download_document_file")
+def download_document_file(
+    document_id: int, ticket: str = Query(...), db: Session = Depends(get_db),
+):
+    """Serve a PDF only with a short-lived ticket issued to an authorized user."""
+    try:
+        payload = jwt.decode(ticket, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("scope") != "document_download" or int(payload.get("document_id", -1)) != document_id:
+            raise ValueError("Invalid download ticket")
+        user_id = int(payload.get("sub"))
+    except (JWTError, ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Download link expired or invalid")
+
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not user or not doc or not can_access_document(doc, user):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if doc.file_data:
+        return Response(
+            content=bytes(doc.file_data), media_type="application/pdf",
+            headers={"Content-Disposition": f'inline; filename="{doc.file_name}"', "Cache-Control": "private, no-store"},
+        )
+    # Backward compatibility for legacy records still present on persistent local storage.
+    if doc.file_path and os.path.isfile(doc.file_path):
+        return FileResponse(doc.file_path, media_type="application/pdf", filename=doc.file_name)
+    raise HTTPException(status_code=404, detail="PDF file is unavailable. Please ask faculty to upload it again.")
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_200_OK)
 def delete_document(
-    document_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["faculty", "admin"]))
+    document_id: int, db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["faculty", "admin"])),
 ):
-    """
-    Deletes an uploaded document, its associated metadata, notifications,
-    and the physical PDF file (Faculty/Admin only).
-    """
     doc = db.query(Document).filter(Document.id == document_id).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-
-    # 1. Delete associated notifications
     db.query(Notification).filter(Notification.document_id == document_id).delete(synchronize_session=False)
-
-    # 2. Delete associated notice metadata
     db.query(NoticeMetadata).filter(NoticeMetadata.document_id == document_id).delete(synchronize_session=False)
-
-    # 3. Delete associated academic resources
     db.query(AcademicResource).filter(AcademicResource.document_id == document_id).delete(synchronize_session=False)
-
-    # 4. Remove physical file from disk if present
-    if doc.file_path and os.path.exists(doc.file_path):
+    if doc.file_path and os.path.isfile(doc.file_path):
         try:
             os.remove(doc.file_path)
-        except Exception:
+        except OSError:
             pass
-
-    # 5. Delete document record
-    doc_title = doc.title
+    title = doc.title
     db.delete(doc)
     db.commit()
-
-    return {"status": "success", "message": f"Document '{doc_title}' deleted successfully."}
+    return {"status": "success", "message": f"Document '{title}' deleted successfully."}

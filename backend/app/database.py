@@ -1,55 +1,103 @@
+
 """
-Database Connection and Session Management
-Supports SQLite out of the box (zero-configuration) and seamlessly connects to PostgreSQL when configured.
+Database Connection and Session Management.
+
+Supports SQLite for local development and PostgreSQL for deployment.
+Uses connection health checks to avoid reusing stale PostgreSQL connections.
 """
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from app.config import settings
 
-# Normalize PostgreSQL URL for psycopg2 driver compatibility
+
+# Read database URL from application settings.
 db_url = settings.DATABASE_URL
+
+# Normalize PostgreSQL URL for psycopg2 compatibility.
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    db_url = db_url.replace(
+        "postgres://",
+        "postgresql+psycopg2://",
+        1
+    )
 elif db_url.startswith("postgresql://") and not db_url.startswith("postgresql+"):
-    db_url = db_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    db_url = db_url.replace(
+        "postgresql://",
+        "postgresql+psycopg2://",
+        1
+    )
 
-# Clean channel_binding for Windows libpq compatibility if present
+# Preserve the existing channel_binding compatibility handling.
 if "channel_binding" in db_url:
-    db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+    db_url = db_url.replace("&channel_binding=require", "")
+    db_url = db_url.replace("?channel_binding=require", "")
 
-connect_args = {}
+
+# Common engine settings.
+engine_options = {
+    "pool_pre_ping": True,
+}
+
 if db_url.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    # SQLite settings for local development.
+    engine_options["connect_args"] = {
+        "check_same_thread": False
+    }
 
-# Resilient connection: test PostgreSQL; if offline/DNS fails, fall back to local SQLite
+else:
+    # PostgreSQL connection-pool settings.
+    engine_options.update({
+        "pool_recycle": 1800,
+        "pool_timeout": 30,
+        "connect_args": {
+            "connect_timeout": 10
+        }
+    })
+
+
+# Create one engine.
+engine = create_engine(db_url, **engine_options)
+
+
+# Verify the configured database connection.
+# Do not silently switch to SQLite if PostgreSQL fails.
 try:
-    if not db_url.startswith("sqlite"):
-        test_engine = create_engine(db_url, connect_args=connect_args)
-        with test_engine.connect() as test_conn:
-            pass
-        engine = test_engine
-        print("[OK] Connected to Cloud PostgreSQL (Neon)")
+    with engine.connect() as connection:
+        connection.exec_driver_sql("SELECT 1")
+
+    if db_url.startswith("sqlite"):
+        print("[OK] Connected to SQLite database")
     else:
-        engine = create_engine(db_url, connect_args=connect_args)
+        print("[OK] Connected to Cloud PostgreSQL")
+
 except Exception as e:
-    print(f"[WARNING] Cloud PostgreSQL unreachable. Falling back to local SQLite. ({type(e).__name__})")
-    db_url = "sqlite:///./college_assistant.db"
-    connect_args = {"check_same_thread": False}
-    engine = create_engine(db_url, connect_args=connect_args)
-    print("[OK] Running on local SQLite database (college_assistant.db)")
+    print(
+        f"[DATABASE ERROR] Could not connect to configured database: "
+        f"{type(e).__name__}: {e}"
+    )
+    raise
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Base class for all SQLAlchemy database models
+# Database session factory.
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine
+)
+
+
+# Base class for all SQLAlchemy models.
 Base = declarative_base()
 
 
 def get_db():
     """
-    FastAPI dependency that provides a transactional database session per request,
-    and ensures it is cleanly closed when the request finishes.
+    Provides a database session for each FastAPI request
+    and closes it after the request finishes.
     """
     db = SessionLocal()
+
     try:
         yield db
     finally:

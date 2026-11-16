@@ -23,28 +23,32 @@ from app.routers import (
 Base.metadata.create_all(bind=engine)
 
 def _run_migrations():
-    """
-    Applies safe ALTER TABLE migrations for new columns added after initial deploy.
-    Uses IF NOT EXISTS so it's idempotent and never crashes on re-run.
-    """
+    """Idempotently add document storage columns for existing deployments."""
     from sqlalchemy import text
-    try:
-        with engine.connect() as conn:
-            # Add raw_text column to documents table (stores full PDF text in DB)
-            conn.execute(text(
-                "ALTER TABLE documents ADD COLUMN IF NOT EXISTS raw_text TEXT"
-            ))
-            conn.commit()
-            print("[OK] Migration: documents.raw_text column ensured.")
-    except Exception as e:
-        # SQLite doesn't support IF NOT EXISTS in ALTER TABLE — handle gracefully
+    dialect = engine.dialect.name
+    column_type = "BYTEA" if dialect == "postgresql" else "BLOB"
+    statements = [
+        "ALTER TABLE documents ADD COLUMN IF NOT EXISTS raw_text TEXT",
+        f"ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_data {column_type}",
+    ]
+    for statement in statements:
         try:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE documents ADD COLUMN raw_text TEXT"))
-                conn.commit()
-                print("[OK] Migration: documents.raw_text added (SQLite).")
+            with engine.begin() as conn:
+                conn.execute(text(statement))
         except Exception:
-            print(f"[INFO] Migration skipped (column may already exist): {e}")
+            # SQLite versions without ADD COLUMN IF NOT EXISTS use this fallback.
+            if dialect == "sqlite":
+                column = "raw_text" if "raw_text" in statement else "file_data"
+                fallback_type = "TEXT" if column == "raw_text" else "BLOB"
+                try:
+                    with engine.begin() as conn:
+                        conn.execute(text(f"ALTER TABLE documents ADD COLUMN {column} {fallback_type}"))
+                except Exception as exc:
+                    # Existing column is expected on subsequent startup.
+                    print(f"[INFO] Migration {column} skipped (likely already exists): {exc}")
+            else:
+                raise
+    print("[OK] Migration: documents.raw_text and documents.file_data ensured.")
 
 try:
     _run_migrations()
@@ -146,18 +150,30 @@ def init_production_db():
                         message=summary_text
                     ))
 
-        # 5. Backfill raw_text for documents uploaded before this column existed
-        docs_without_text = db.query(Document).filter(Document.raw_text == None).all()
-        for d in docs_without_text:
-            if d.file_path and os.path.exists(d.file_path):
+        # 5. Migrate any still-available legacy local PDFs into persistent DB storage.
+        # This preserves old uploads during the first deployment of the storage fix.
+        for d in db.query(Document).all():
+            if not d.file_data and d.file_path and os.path.isfile(d.file_path):
                 try:
-                    from app.services.pdf_processor import extract_text_from_pdf
-                    extracted = extract_text_from_pdf(d.file_path)
+                    with open(d.file_path, "rb") as pdf_file:
+                        d.file_data = pdf_file.read()
+                    print(f"[OK] Migrated PDF bytes into database: {d.title}")
+                except Exception as ex:
+                    print(f"[WARNING] Could not migrate PDF bytes for {d.title}: {ex}")
+
+            if not d.raw_text:
+                try:
+                    from app.services.pdf_processor import extract_text_from_pdf_bytes, extract_text_from_pdf
+                    extracted = ""
+                    if d.file_data:
+                        extracted = extract_text_from_pdf_bytes(bytes(d.file_data))
+                    elif d.file_path and os.path.isfile(d.file_path):
+                        extracted = extract_text_from_pdf(d.file_path)
                     if extracted:
                         d.raw_text = extracted
                         print(f"[OK] Backfilled raw_text for: {d.title}")
                 except Exception as ex:
-                    print(f"[WARNING] Could not backfill {d.title}: {ex}")
+                    print(f"[WARNING] Could not backfill text for {d.title}: {ex}")
 
         db.commit()
     except Exception as e:

@@ -107,7 +107,8 @@ class RAGEngine:
         self._save_persisted_chunks()
 
     def search_similar_chunks(
-        self, query: str, top_k: int = 4, document_id: Optional[int] = None
+        self, query: str, top_k: int = 4, document_id: Optional[int] = None,
+        allowed_document_ids: Optional[List[int]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieves the top_k most relevant chunks for a user's query.
@@ -118,6 +119,12 @@ class RAGEngine:
             candidate_chunks = [
                 c for c in candidate_chunks
                 if c.get("metadata", {}).get("document_id") == document_id
+            ]
+        if allowed_document_ids is not None:
+            allowed_set = set(allowed_document_ids)
+            candidate_chunks = [
+                c for c in candidate_chunks
+                if c.get("metadata", {}).get("document_id") in allowed_set
             ]
 
         if not candidate_chunks:
@@ -142,7 +149,8 @@ class RAGEngine:
         return [item[1] for item in scored[:top_k]]
 
     def answer_question(
-        self, query: str, document_id: Optional[int] = None, db: Optional[Any] = None
+        self, query: str, document_id: Optional[int] = None, db: Optional[Any] = None,
+        allowed_document_ids: Optional[List[int]] = None,
     ) -> Dict[str, Any]:
         """
         Executes the hybrid RAG pipeline:
@@ -151,7 +159,10 @@ class RAGEngine:
         3. Prompts Gemini with grounded official context
         4. Returns structured answer along with verified source citations
         """
-        retrieved_chunks = self.search_similar_chunks(query, top_k=4, document_id=document_id)
+        retrieved_chunks = self.search_similar_chunks(
+            query, top_k=4, document_id=document_id,
+            allowed_document_ids=allowed_document_ids,
+        )
 
         context_blocks = []
         sources = []
@@ -186,7 +197,14 @@ class RAGEngine:
                 except Exception as rte:
                     logger.warning(f"raw_text column not yet available: {rte}")
 
-                docs = db.query(Document).all()
+                docs_query = db.query(Document)
+                if allowed_document_ids is not None:
+                    if not allowed_document_ids:
+                        docs = []
+                    else:
+                        docs = docs_query.filter(Document.id.in_(allowed_document_ids)).all()
+                else:
+                    docs = docs_query.all()
                 query_lower = query.lower()
                 query_terms = [w.strip(' "\'') for w in query_lower.split() if len(w.strip(' "\'')) > 2]
 
