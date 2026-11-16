@@ -288,19 +288,15 @@ class RAGEngine:
         first_doc_title = sources[0]["document_title"] if sources else "Official Documents"
         first_snippet = sources[0]["snippet"] if sources else "Official college document details."
 
-        if not api_key or "your-gemini-api-key" in api_key.lower():
-            # Grounded fallback response when API key is pending
+        if not api_key or "your-gemini-api-key" in api_key.lower() or not api_key.startswith("AIza"):
+            # Gemini not configured — return clean excerpt from actual document content
             fallback_parts = []
             for s in sources[:3]:
                 fallback_parts.append(f"**{s['document_title']}**\n{s['snippet']}")
-            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "No matching documents."
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else combined_context[:400]
             return {
                 "query": query,
-                "answer": (
-                    f"I found relevant official documents but AI answering is not configured yet.\n\n"
-                    f"{fallback_body}\n\n"
-                    f"*Please open the original PDF for complete details.*"
-                ),
+                "answer": fallback_body.strip() or "No relevant college documents found for your query.",
                 "sources": sources
             }
 
@@ -329,18 +325,13 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             }
         except Exception as e:
             logger.error(f"Error calling Gemini in RAG pipeline: {e}")
-            # Build a clean, readable fallback from document metadata (no raw context dump)
             fallback_parts = []
             for s in sources[:3]:
                 fallback_parts.append(f"**{s['document_title']}**\n{s['snippet']}")
-            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "No matching college documents found."
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else combined_context[:400]
             return {
                 "query": query,
-                "answer": (
-                    f"I found relevant official documents but could not generate an AI answer right now.\n\n"
-                    f"{fallback_body}\n\n"
-                    f"*Please open the original PDF for complete details.*"
-                ),
+                "answer": fallback_body.strip() or "No relevant college documents found for your query.",
                 "sources": sources
             }
 
@@ -350,7 +341,7 @@ OFFICIAL IIPS DAVV DOCUMENTS:
         """
         Summarizes an entire document into key highlights: Overview, Deadlines, Eligibility, Actions.
         """
-        # If raw text was not provided or file is virtual, assemble text from indexed chunks
+        # If raw text was not provided, assemble text from indexed chunks
         if not text.strip() and document_id is not None:
             matched = [
                 c["text"] for c in self.chunks
@@ -359,24 +350,25 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             if matched:
                 text = "\n\n".join(matched)
 
-        if not text.strip():
-            text = (
-                f"Official academic resource: {document_title}.\n\n"
-                f"Covers course curriculum, unit-wise syllabus modules, practical lab exercises, "
-                f"and recommended textbooks for semester examination preparation."
-            )
-
         api_key = settings.GEMINI_API_KEY
-        if not api_key or "your-gemini-api-key" in api_key.lower() or not api_key.startswith("AIza"):
-            # API key missing or invalid — return clean excerpt from actual PDF text
-            excerpt = text[:600].strip() if text and len(text) > 40 else None
+        gemini_available = bool(api_key and api_key.startswith("AIza"))
+
+        # If no text found at all, we cannot summarize
+        if not text.strip():
             return {
                 "title": document_title,
                 "summary": (
-                    excerpt + "\n\n*(AI summary requires Gemini API key — open the original PDF for full details.)*"
-                    if excerpt
-                    else f"AI summary is not available. Please open the original PDF for '{document_title}'."
+                    "⚠️ Document content could not be extracted. "
+                    "Please open the original PDF to read this document, "
+                    "or delete and re-upload it."
                 ),
+            }
+
+        # If Gemini API key is not configured, return an excerpt of actual PDF text
+        if not gemini_available:
+            return {
+                "title": document_title,
+                "summary": text[:800].strip(),
             }
 
         try:
@@ -457,15 +449,10 @@ Provide a clear, structured summary of this document based on its actual content
             }
         except Exception as e:
             logger.error(f"Error generating summary: {e}")
-            # Return clean excerpt instead of raw dump
-            excerpt = text[:500].strip() if text and len(text) > 40 else None
+            excerpt = text[:600].strip() if text and len(text) > 40 else None
             return {
                 "title": document_title,
-                "summary": (
-                    excerpt + "\n\n*(AI summary unavailable — please open the original PDF for full details.)*"
-                    if excerpt
-                    else "AI summary could not be generated. Please open the original PDF to read this document."
-                )
+                "summary": excerpt if excerpt else "Summary could not be generated. Please open the original PDF."
             }
 
 

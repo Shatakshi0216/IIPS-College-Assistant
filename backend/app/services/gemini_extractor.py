@@ -135,7 +135,10 @@ def _fallback_metadata_extractor(text: str) -> Dict[str, Any]:
 
     return {
         "title": guessed_title[:100],
-        "summary": f"{guessed_title}. This is an official IIPS DAVV notice. Please open the original PDF for complete and accurate details.",
+        "summary": (
+            " ".join(first_lines[:3]) if first_lines
+            else f"Official IIPS DAVV notice: {guessed_title}. Please open the original PDF for complete details."
+        ),
         "action_required": "Please read the notice carefully and complete necessary steps before the deadline.",
         "deadline": None,
         "eligible_branches": branches,

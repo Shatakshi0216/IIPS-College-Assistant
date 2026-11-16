@@ -67,7 +67,6 @@ def summarize_document(
         raise HTTPException(status_code=404, detail="Document not found")
 
     # Always regenerate from actual PDF content.
-    # The stored notice_metadata.summary may be a generic placeholder from upload time.
     raw_text = ""
     try:
         raw_text = doc.raw_text or ""
@@ -76,6 +75,15 @@ def summarize_document(
     if not raw_text and doc.file_data:
         try:
             raw_text = extract_text_from_pdf_bytes(bytes(doc.file_data))
+            # Save back to DB so future calls are fast
+            if raw_text:
+                try:
+                    from sqlalchemy import text as sql_text
+                    db.execute(sql_text("UPDATE documents SET raw_text = :t WHERE id = :id"),
+                               {"t": raw_text, "id": doc.id})
+                    db.commit()
+                except Exception:
+                    db.rollback()
         except Exception:
             raw_text = ""
     if not raw_text and doc.file_path:
