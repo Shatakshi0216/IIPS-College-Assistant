@@ -25,16 +25,17 @@ def can_access_document(document: Document, user: User) -> bool:
             return True
         return is_student_eligible(profile, document.notice_metadata)
 
-    # Academic resources are restricted to the student's own branch/year/semester.
+    # Academic resources: student can see resources for their own branch (any semester)
+    # or resources tagged as "ALL" branch. This allows browsing resources
+    # from other semesters too (useful for ATKT / revision / upcoming semester prep).
     resource = document.academic_resource
     if resource is not None:
-        return (
-            resource.branch.upper() in (profile.branch.upper(), "ALL")
-            and resource.year == profile.year
-            and resource.semester == profile.semester
-        )
+        branch_match = resource.branch.upper() in (profile.branch.upper(), "ALL")
+        return branch_match
 
-    return False
+    # For any other document types (notes, etc.) — allow access if document exists
+    # This ensures admin-uploaded files are visible to all students
+    return True
 
 
 def get_accessible_document_ids(db: Session, user: User) -> List[int]:

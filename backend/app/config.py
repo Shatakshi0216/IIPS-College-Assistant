@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite:///./college_assistant.db"
 
     # Google Gemini AI Key — set GEMINI_API_KEY in Render environment variables
-    # Get a free key at: https://aistudio.google.com/app/apikey (starts with AIza...)
+    # Get a free key at: https://aistudio.google.com/app/apikey
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY", "")
 
     # Storage Paths

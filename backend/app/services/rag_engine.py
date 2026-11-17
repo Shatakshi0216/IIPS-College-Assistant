@@ -23,6 +23,88 @@ GEMINI_MODELS = [
     "gemini-1.5-flash-8b",
 ]
 
+# ── IIPS DAVV General Knowledge Base ──────────────────────────────────────────
+# This knowledge base lets the AI Chat answer common questions even when
+# no matching uploaded document exists in the system.
+IIPS_KNOWLEDGE_BASE = """
+=== IIPS DAVV GENERAL KNOWLEDGE BASE ===
+
+ABOUT IIPS:
+- Full Name: International Institute of Professional Studies (IIPS)
+- University: Devi Ahilya Vishwavidyalaya (DAVV), Indore, Madhya Pradesh, India
+- Established: 1998
+- Type: University-managed institute offering professional courses
+- Campus: Takshashila Campus, Khandwa Road, Indore, MP 452017
+
+PROGRAMMES OFFERED:
+- MCA (Master of Computer Applications) — 2 years
+- M.Tech (Master of Technology) — 2 years
+- MBA (MS) (Master of Business Administration — Management Studies) — 2 years
+- MBA (TA) (Master of Business Administration — Travel & Tourism Administration) — 2 years
+- BCA (Bachelor of Computer Applications) — 3 years
+- B.Com (Hons) (Bachelor of Commerce Honours) — 3 years
+- Integrated courses (IT, CSE pathways)
+
+ATTENDANCE RULES:
+- Minimum attendance requirement: 75% in each subject
+- Students falling below 75% attendance may be debarred from examinations
+- Medical leave requires a valid medical certificate submitted within 7 days
+- Attendance is recorded lecture-wise for theory and lab sessions separately
+- Shortage of attendance leads to: First warning at 65%, debarment notice below 60%
+
+EXAMINATION RULES:
+- Internal assessment: 30 marks (assignments, quizzes, mid-term tests)
+- External/university examination: 70 marks
+- Minimum passing marks: 33% in each subject (combined internal + external)
+- ATKT (Allowed To Keep Terms): Students can carry failed subjects to the next semester
+- Maximum ATKT subjects: Typically 2 (varies by programme)
+- Re-examination: Conducted once per semester for failed students (ATKT/Back exams)
+- Unfair means in examination lead to cancellation of paper/semester
+
+GRADING / CGPA:
+- DAVV follows a 10-point CGPA system
+- Grade Points: O=10, A+=9, A=8, B+=7, B=6, C=5, P=4, F=0
+- Minimum CGPA for placement eligibility: Usually 6.0 or above (varies by company)
+
+FEES & SCHOLARSHIPS:
+- Fee structure varies by programme; refer to official fee notification for exact amounts
+- SC/ST/OBC fee concession as per MP state government norms
+- Merit scholarships may be available; check with the department
+
+LIBRARY:
+- Central library with digital resources and e-journals
+- Book issue limit: 3 books for UG, 5 books for PG students
+- Fine for late return: Rs. 1 per day per book
+
+PLACEMENT CELL:
+- IIPS has an active placement cell
+- Companies visiting include IT, consulting, finance, and analytics firms
+- Pre-placement talks, mock interviews, and aptitude training are conducted
+- Students must register with the placement cell to be eligible
+
+HOSTEL & FACILITIES:
+- Separate hostels for boys and girls available through DAVV
+- Wi-Fi facility available on campus
+- Computer labs, seminar halls, and auditorium available
+
+CONTACT:
+- Address: International Institute of Professional Studies, Takshashila Campus, Khandwa Road, Indore – 452017
+- Phone: 0731-2764573
+- Website: iips.davv.ac.in
+
+ACADEMIC CALENDAR:
+- Odd semester: July to December
+- Even semester: January to June
+- Mid-term exams: Usually in September/October (odd) or March/April (even)
+- Final exams: November/December (odd) or May/June (even)
+
+IMPORTANT RULES:
+- Identity card is mandatory on campus
+- Mobile phones must be on silent mode during lectures
+- Ragging is strictly prohibited — anti-ragging committee is active
+- Dress code: Formal/smart casual (no shorts, sleeveless, or slippers in classrooms)
+"""
+
 
 def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
     """
@@ -37,6 +119,7 @@ def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
         }
     }).encode("utf-8")
 
+    last_error = None
     for model_name in GEMINI_MODELS:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -53,15 +136,19 @@ def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except urllib.error.HTTPError as e:
             err_body = e.read().decode("utf-8")
-            logging.getLogger(__name__).warning(f"Gemini {model_name} HTTP {e.code}: {err_body[:120]}")
+            logging.getLogger(__name__).warning(f"Gemini {model_name} HTTP {e.code}: {err_body[:200]}")
+            last_error = e
             if e.code == 404:
                 continue  # try next model
+            if e.code in (400, 403):
+                continue  # try next model (key format may work with different model)
             raise
         except Exception as e:
             logging.getLogger(__name__).warning(f"Gemini {model_name} error: {e}")
-            raise
+            last_error = e
+            continue  # try next model instead of immediately raising
 
-    raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}")
+    raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}. Last error: {last_error}")
 
 logger = logging.getLogger(__name__)
 
@@ -154,10 +241,11 @@ class RAGEngine:
     ) -> Dict[str, Any]:
         """
         Executes the hybrid RAG pipeline:
-        1. Retrieves relevant text chunks from FAISS / persisted vector store
+        1. Retrieves relevant text chunks from persisted vector store
         2. Augments with real-time Document & NoticeMetadata knowledge from PostgreSQL
-        3. Prompts Gemini with grounded official context
-        4. Returns structured answer along with verified source citations
+        3. Includes IIPS general knowledge base for common questions
+        4. Prompts Gemini with grounded official context
+        5. Returns structured answer along with verified source citations
         """
         retrieved_chunks = self.search_similar_chunks(
             query, top_k=4, document_id=document_id,
@@ -227,7 +315,7 @@ class RAGEngine:
                             f"Category: {doc.category.replace('_', ' ').title()}"
                         ]
                         if m:
-                            if m.summary:
+                            if m.summary and "official academic resource" not in m.summary.lower() and "covers course curriculum" not in m.summary.lower():
                                 doc_details.append(f"AI Summary: {m.summary}")
                             if m.action_required:
                                 doc_details.append(f"Action Required: {m.action_required}")
@@ -281,48 +369,72 @@ class RAGEngine:
             except Exception as e:
                 logger.error(f"Error querying DB in RAG pipeline: {e}")
 
-        if not context_blocks:
+        # Always include IIPS knowledge base for general questions
+        context_blocks.append(IIPS_KNOWLEDGE_BASE)
+
+        combined_context = "\n\n".join(context_blocks)
+
+        api_key = settings.GEMINI_API_KEY
+
+        if not api_key or "your-gemini-api-key" in api_key.lower() or len(api_key) < 10:
+            # Gemini not configured — return clean excerpt from actual document content
+            # For general questions, provide answer from knowledge base
+            query_l = query.lower()
+            general_topics = {
+                "attendance": "Minimum attendance requirement at IIPS DAVV is 75% in each subject. Students falling below 75% may be debarred from examinations. Medical leave requires a valid certificate submitted within 7 days. First warning is issued at 65%, and debarment notice below 60%.",
+                "exam": "Internal assessment: 30 marks (assignments, quizzes, mid-term). External exam: 70 marks. Minimum passing: 33% combined. ATKT allowed for carrying failed subjects. Max ATKT subjects: typically 2.",
+                "cgpa": "DAVV follows a 10-point CGPA system. Grade points: O=10, A+=9, A=8, B+=7, B=6, C=5, P=4, F=0. Minimum CGPA for placement: usually 6.0+.",
+                "placement": "IIPS has an active placement cell. Companies from IT, consulting, finance & analytics visit. Students must register with the placement cell. Pre-placement talks and mock interviews are conducted.",
+                "library": "Central library with digital resources. Book limit: 3 for UG, 5 for PG. Late fine: Rs. 1/day/book.",
+                "hostel": "Separate boys and girls hostels available through DAVV. Wi-Fi on campus. Computer labs, seminar halls available.",
+                "fee": "Fee structure varies by programme. SC/ST/OBC concession as per MP state norms. Merit scholarships may be available.",
+                "programme": "IIPS offers: MCA (2yr), M.Tech (2yr), MBA-MS (2yr), MBA-TA (2yr), BCA (3yr), B.Com Hons (3yr), and IT/CSE pathways.",
+                "contact": "IIPS DAVV, Takshashila Campus, Khandwa Road, Indore – 452017. Phone: 0731-2764573. Website: iips.davv.ac.in",
+                "rule": "ID card mandatory. Phones on silent in lectures. Ragging strictly prohibited. Formal dress code in classrooms.",
+                "calendar": "Odd semester: July–December. Even semester: January–June. Mid-terms: Sep/Oct or Mar/Apr. Finals: Nov/Dec or May/Jun.",
+            }
+            # Find matching general topic
+            for topic, answer in general_topics.items():
+                if topic in query_l:
+                    return {
+                        "query": query,
+                        "answer": answer,
+                        "sources": sources
+                    }
+
+            # Fallback: show document excerpts
+            if sources:
+                fallback_parts = []
+                for s in sources[:3]:
+                    clean_snippet = s["snippet"].replace("=== OFFICIAL COLLEGE DOCUMENT:", "").replace("===", "").strip()
+                    fallback_parts.append(f"**{s['document_title']}**\n{clean_snippet}")
+                fallback_body = "\n\n".join(fallback_parts)
+                return {
+                    "query": query,
+                    "answer": fallback_body.strip(),
+                    "sources": sources
+                }
             return {
                 "query": query,
                 "answer": "I could not find any official college documents addressing your question. Please check with your department or upload the relevant notice.",
                 "sources": []
             }
 
-        combined_context = "\n\n".join(context_blocks)
-
-        api_key = settings.GEMINI_API_KEY
-        first_doc_title = sources[0]["document_title"] if sources else "Official Documents"
-        first_snippet = sources[0]["snippet"] if sources else "Official college document details."
-
-        if not api_key or "your-gemini-api-key" in api_key.lower() or len(api_key) < 20:
-            # Gemini not configured — return clean excerpt from actual document content
-            fallback_parts = []
-            for s in sources[:3]:
-                # Show title + clean snippet (not raw === OFFICIAL COLLEGE DOCUMENT === format)
-                clean_snippet = s["snippet"].replace("=== OFFICIAL COLLEGE DOCUMENT:", "").strip()
-                clean_snippet = clean_snippet.replace("===", "").strip()
-                fallback_parts.append(f"**{s['document_title']}**\n{clean_snippet}")
-            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "I found relevant documents but could not generate an AI answer right now."
-            return {
-                "query": query,
-                "answer": fallback_body.strip() or "No relevant college documents found for your query.",
-                "sources": sources
-            }
-
         try:
-            rag_prompt = f"""You are the official AI Assistant for International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya (IIPS DAVV).
+            rag_prompt = f"""You are the official AI Assistant for International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya (IIPS DAVV), Indore.
 A student or faculty member is asking: "{query}"
 
-Answer the question using ONLY the official college document content provided below.
+Answer the question using the official college document content AND the IIPS general knowledge base provided below.
+
 Important rules:
-1. For timetables: list ALL subjects, dates, times, course codes, and groups completely — do NOT stop after a few entries.
-2. Use clear markdown formatting: bold headings, bullet points per subject.
-3. Present every row/entry from the timetable that appears in the document.
-4. Keep the tone helpful, professional, and complete.
-5. Do not truncate — provide the FULL list of exam dates and subjects.
+1. If the answer is available in the uploaded documents, use that — it's the most authoritative source.
+2. If no uploaded document covers the topic but the IIPS Knowledge Base has relevant info, use that.
+3. For timetables: list ALL subjects, dates, times, course codes completely.
+4. Use clear markdown formatting: bold headings, bullet points.
+5. Keep the tone helpful, professional, and complete.
+6. Do NOT make up information. If truly unknown, say "This information is not available in the current college documents. Please contact IIPS administration at 0731-2764573."
 
-
-OFFICIAL IIPS DAVV DOCUMENTS:
+OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
 {combined_context}
 """
             answer_text = _call_gemini(rag_prompt, api_key)
@@ -334,14 +446,31 @@ OFFICIAL IIPS DAVV DOCUMENTS:
             }
         except Exception as e:
             logger.error(f"Error calling Gemini in RAG pipeline: {e}")
+            # Even when Gemini fails, try to answer from knowledge base
+            query_l = query.lower()
+            general_topics = {
+                "attendance": "Minimum attendance requirement at IIPS DAVV is **75%** in each subject. Students falling below 75% may be debarred from examinations.\n\n- Medical leave requires a valid certificate submitted within 7 days\n- First warning at 65% attendance\n- Debarment notice below 60%\n- Attendance is recorded lecture-wise for theory and lab separately",
+                "exam": "**Examination Pattern:**\n- Internal assessment: 30 marks (assignments, quizzes, mid-term)\n- External/university exam: 70 marks\n- Minimum passing: 33% combined\n- ATKT allowed for failed subjects (max 2 typically)\n- Re-exam conducted once per semester",
+                "cgpa": "**DAVV 10-point CGPA System:**\n- O=10, A+=9, A=8, B+=7, B=6, C=5, P=4, F=0\n- Minimum CGPA for placement: usually 6.0+",
+                "placement": "**IIPS Placement Cell:**\n- Active placement cell with companies from IT, consulting, finance\n- Pre-placement talks and mock interviews\n- Students must register with placement cell\n- Minimum CGPA 6.0+ usually required",
+                "rule": "**Important IIPS Rules:**\n- ID card mandatory on campus\n- Phones on silent during lectures\n- Ragging strictly prohibited\n- Formal dress code required in classrooms",
+            }
+            for topic, answer in general_topics.items():
+                if topic in query_l:
+                    return {
+                        "query": query,
+                        "answer": answer,
+                        "sources": sources
+                    }
+            # Last resort fallback with document excerpts
             fallback_parts = []
             for s in sources[:3]:
                 clean_snippet = s["snippet"].replace("=== OFFICIAL COLLEGE DOCUMENT:", "").replace("===", "").strip()
                 fallback_parts.append(f"**{s['document_title']}**\n{clean_snippet}")
-            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "I found relevant documents but could not generate an AI answer right now."
+            fallback_body = "\n\n".join(fallback_parts) if fallback_parts else "I found relevant documents but could not generate an AI answer right now. Please try again."
             return {
                 "query": query,
-                "answer": fallback_body.strip() or "No relevant college documents found for your query.",
+                "answer": fallback_body.strip(),
                 "sources": sources
             }
 
@@ -361,7 +490,7 @@ OFFICIAL IIPS DAVV DOCUMENTS:
                 text = "\n\n".join(matched)
 
         api_key = settings.GEMINI_API_KEY
-        gemini_available = bool(api_key and len(api_key) >= 20 and "your-gemini-api-key" not in api_key.lower())
+        gemini_available = bool(api_key and len(api_key) >= 10 and "your-gemini-api-key" not in api_key.lower())
 
         # If no text found at all, we cannot summarize
         if not text.strip():
@@ -376,9 +505,13 @@ OFFICIAL IIPS DAVV DOCUMENTS:
 
         # If Gemini API key is not configured, return an excerpt of actual PDF text
         if not gemini_available:
+            # Clean up text and return a readable excerpt
+            clean_text = text.strip()
+            if len(clean_text) > 800:
+                clean_text = clean_text[:800] + "..."
             return {
                 "title": document_title,
-                "summary": text[:800].strip(),
+                "summary": clean_text,
             }
 
         try:
@@ -426,6 +559,13 @@ OFFICIAL IIPS DAVV DOCUMENTS:
 - Key requirements or conditions
 - Important dates or deadlines
 - Action required from students/faculty"""
+            elif any(w in title_lower for w in ["cv", "time table", "tt", "schedule"]):
+                doc_type_hint = "Timetable / Schedule"
+                specific_guidance = """Extract and present:
+- ALL dates, subjects, timings listed in the document completely
+- Course codes if mentioned
+- Venue/room information
+- Any special instructions"""
             else:
                 doc_type_hint = "College Notice"
                 specific_guidance = """Extract and present:

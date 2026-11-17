@@ -29,6 +29,7 @@ def _call_gemini_extractor(prompt: str, api_key: str) -> str:
         "contents": [{"parts": [{"text": prompt}]}]
     }).encode("utf-8")
 
+    last_error = None
     for model_name in GEMINI_MODELS:
         url = (
             f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -40,20 +41,20 @@ def _call_gemini_extractor(prompt: str, api_key: str) -> str:
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=20) as resp:
+            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=30) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except urllib.error.HTTPError as e:
             err = e.read().decode("utf-8")
-            logger.warning(f"Gemini {model_name} HTTP {e.code}: {err[:100]}")
-            if e.code == 404:
-                continue
-            raise
+            logger.warning(f"Gemini {model_name} HTTP {e.code}: {err[:200]}")
+            last_error = e
+            continue  # always try next model
         except Exception as e:
             logger.warning(f"Gemini {model_name} error: {e}")
-            raise
+            last_error = e
+            continue  # try next model
 
-    raise RuntimeError(f"All Gemini models unavailable: {GEMINI_MODELS}")
+    raise RuntimeError(f"All Gemini models unavailable: {GEMINI_MODELS}. Last error: {last_error}")
 
 # System instruction defining exact JSON schema output
 EXTRACTION_PROMPT = """

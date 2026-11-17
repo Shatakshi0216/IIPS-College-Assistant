@@ -31,6 +31,8 @@ def get_academic_resources(
     """
     Search and filter academic resources hierarchically:
     Branch -> Year -> Semester -> Subject -> Type.
+    Students can browse all resources for their branch (defaults to their semester
+    but the app can pass specific semester filters).
     """
     query = (
         db.query(Document)
@@ -41,12 +43,16 @@ def get_academic_resources(
         profile = current_user.student_profile
         if profile is None:
             raise HTTPException(status_code=403, detail="Student academic profile is required")
-        # Never trust student-supplied filters for access control. Force their profile.
+        # Filter by student's branch (required) but allow browsing any semester
         query = query.filter(
             ((AcademicResource.branch == profile.branch.upper()) | (AcademicResource.branch == "ALL")),
-            AcademicResource.year == profile.year,
-            AcademicResource.semester == profile.semester,
         )
+        # Apply semester filter from the request (the app sends the student's semester by default)
+        if semester and semester > 0:
+            query = query.filter(AcademicResource.semester == semester)
+        # Apply year filter from the request
+        if year and year > 0:
+            query = query.filter(AcademicResource.year == year)
     else:
         if branch:
             query = query.filter(
@@ -84,9 +90,9 @@ def get_unique_subjects(
             raise HTTPException(status_code=403, detail="Student academic profile is required")
         query = query.filter(
             ((AcademicResource.branch == profile.branch.upper()) | (AcademicResource.branch == "ALL")),
-            AcademicResource.year == profile.year,
-            AcademicResource.semester == profile.semester,
         )
+        if semester:
+            query = query.filter(AcademicResource.semester == semester)
     else:
         if branch:
             query = query.filter(
