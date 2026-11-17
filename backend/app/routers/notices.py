@@ -43,10 +43,23 @@ def get_personalized_notice_feed(
     personalized_feed = []
 
     for doc in all_notices:
+        # Rules and Circulars are official policies that apply to ALL students
+        if doc.category in ("rule", "circular"):
+            personalized_feed.append(doc)
+            continue
+
         if not doc.notice_metadata:
             # If no metadata yet, show by default
             personalized_feed.append(doc)
-        elif is_student_eligible(student_profile, doc.notice_metadata):
+            continue
+
+        meta = doc.notice_metadata
+        branches = [str(b).strip().upper() for b in (meta.eligible_branches or ["ALL"])]
+        if "ALL" in branches or len(branches) == 0:
+            personalized_feed.append(doc)
+            continue
+
+        if is_student_eligible(student_profile, meta):
             personalized_feed.append(doc)
 
     return personalized_feed

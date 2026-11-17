@@ -19,9 +19,16 @@ def can_access_document(document: Document, user: User) -> bool:
     if profile is None:
         return False
 
-    # Official notices are shared only when the eligibility engine permits them.
-    if document.category in ("notice", "rule", "circular"):
+    # Rules and circulars apply to all students in the institute
+    if document.category in ("rule", "circular"):
+        return True
+
+    # Official notices are shared based on eligibility matching
+    if document.category == "notice":
         if document.notice_metadata is None:
+            return True
+        branches = [str(b).strip().upper() for b in (document.notice_metadata.eligible_branches or ["ALL"])]
+        if "ALL" in branches or len(branches) == 0:
             return True
         return is_student_eligible(profile, document.notice_metadata)
 

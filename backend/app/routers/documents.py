@@ -76,14 +76,38 @@ async def upload_document(
 
     if category_value in ["notice", "rule", "circular"]:
         ai_data = extract_notice_metadata(raw_text) if raw_text else {}
+
+        # 1. Rules and Circulars apply to the entire college
+        if category_value in ["rule", "circular"]:
+            final_branches = ["ALL"]
+            final_years = [1, 2, 3, 4, 5]
+        else:
+            # 2. Notices: respect branch from upload form if specified
+            if branch and branch.strip() and branch.upper() != "ALL":
+                final_branches = [branch.strip().upper()]
+            elif branch and branch.upper() == "ALL":
+                final_branches = ["ALL"]
+            else:
+                extracted_b = ai_data.get("eligible_branches") or ["ALL"]
+                # Guard against false-positive "IT" substring matches
+                if extracted_b == ["IT"] and not any(k in (raw_text or "").upper() for k in ["BRANCH: IT", "INFORMATION TECHNOLOGY", "IT BRANCH", "M.TECH IT", "MCA IT"]):
+                    final_branches = ["ALL"]
+                else:
+                    final_branches = extracted_b if extracted_b else ["ALL"]
+
+            if year and year > 0:
+                final_years = [year]
+            else:
+                final_years = [1, 2, 3, 4, 5]
+
         notice_meta = NoticeMetadata(
             document_id=new_doc.id,
             title=ai_data.get("title") or title,
             summary=ai_data.get("summary") or f"{title}. Please open the original PDF document for complete details.",
             action_required=ai_data.get("action_required"),
             deadline=ai_data.get("deadline"),
-            eligible_branches=ai_data.get("eligible_branches", ["ALL"]),
-            eligible_years=ai_data.get("eligible_years", [1, 2, 3, 4, 5]),
+            eligible_branches=final_branches,
+            eligible_years=final_years,
             min_cgpa=float(ai_data.get("min_cgpa") or 0.0),
             contact_info=ai_data.get("contact_info"),
             is_urgent=bool(ai_data.get("is_urgent", False)),

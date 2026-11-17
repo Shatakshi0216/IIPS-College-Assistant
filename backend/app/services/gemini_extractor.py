@@ -114,25 +114,41 @@ def extract_notice_metadata(pdf_text: str) -> Dict[str, Any]:
 def _fallback_metadata_extractor(text: str) -> Dict[str, Any]:
     """
     Rule-based heuristic fallback if Gemini API is unreachable or key is absent.
-    Ensures local testing never crashes.
+    Ensures local testing never crashes and doesn't misclassify words as branches.
     """
+    import re
+
     first_lines = [line.strip() for line in text.split("\n") if line.strip()][:3]
     guessed_title = first_lines[0] if first_lines else "College Official Notice"
 
+    # Whole-word regex matching for programmes
+    # Never match substring 'IT' inside words like 'university', 'submit', 'credit', etc.
+    programmes_patterns = [
+        ("MCA", r"\bMCA\b"),
+        ("M.TECH", r"\bM\.?TECH\b"),
+        ("MBA", r"\bMBA\b"),
+        ("BCA", r"\bBCA\b"),
+        ("B.COM", r"\bB\.?COM\b"),
+        ("CSE", r"\bCSE\b"),
+        ("IT", r"(?:\bINFORMATION\s+TECHNOLOGY\b|\bBRANCH\s*:\s*IT\b|\bIT\s+BRANCH\b|\bM\.?TECH\s*\(?IT\)?|\bMCA\s*\(?IT\)?)"),
+    ]
+
     branches = []
-    iips_programmes = ["MCA", "M.TECH", "MBA", "BCA", "B.COM", "IT", "CSE"]
-    for b in iips_programmes:
-        if b in text.upper():
-            branches.append(b)
-    if not branches:
+    for prog, pattern in programmes_patterns:
+        if re.search(pattern, text, re.IGNORECASE):
+            branches.append(prog)
+
+    # If no specific branch was explicitly targeted, it is for ALL branches
+    if not branches or len(branches) >= 3:
         branches = ["ALL"]
 
+    # Only match explicit academic year patterns (e.g. "1st year", "year 2"), NOT calendar dates like "1st Dec"
     years = []
-    for y, label in [(1, "1st"), (2, "2nd"), (3, "3rd"), (4, "4th")]:
-        if label.lower() in text.lower() or f"year {y}" in text.lower():
+    for y, label in [(1, "1st year"), (2, "2nd year"), (3, "3rd year"), (4, "4th year"), (5, "5th year")]:
+        if label in text.lower() or f"year {y}" in text.lower() or f"year-{y}" in text.lower():
             years.append(y)
     if not years:
-        years = [1, 2, 3, 4]
+        years = [1, 2, 3, 4, 5]
 
     return {
         "title": guessed_title[:100],

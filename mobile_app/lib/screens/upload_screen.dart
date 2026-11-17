@@ -137,7 +137,7 @@ class _UploadScreenState extends State<UploadScreen>
       filePath: _selectedFilePath!,
       title: _titleController.text.trim(),
       category: _category,
-      branch: _isAcademic ? _branch : null,
+      branch: _isAcademic ? _branch : (_category == 'notice' ? _branch : 'ALL'),
       year: _isAcademic ? _year : null,
       semester: _isAcademic ? _semester : null,
       subjectName: _isAcademic ? _subjectNameController.text.trim() : null,
@@ -380,6 +380,69 @@ class _UploadScreenState extends State<UploadScreen>
                   (v == null || v.trim().isEmpty) ? 'Please enter a title' : null,
             ),
             const SizedBox(height: 16),
+
+            // Notice target programme field
+            if (_category == 'notice') ...[
+              const Divider(),
+              const Text(
+                'TARGET AUDIENCE',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 1,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _branch,
+                decoration: InputDecoration(
+                  labelText: 'Target Programme',
+                  helperText: 'Select ALL to publish to every student in IIPS DAVV',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  filled: true,
+                  fillColor: Colors.white,
+                ),
+                items: _branches
+                    .map((b) => DropdownMenuItem(
+                          value: b,
+                          child: Text(b == 'ALL' ? 'ALL Programmes (Whole College)' : b),
+                        ))
+                    .toList(),
+                onChanged: _isUploading
+                    ? null
+                    : (v) {
+                        if (v != null) setState(() => _branch = v);
+                      },
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Rules & Circulars announcement notice
+            if (_category == 'rule' || _category == 'circular') ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Rules & Circulars are official college policies visible to all students across all programmes.',
+                        style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             // Academic resource fields (syllabus / question_paper only)
             if (_isAcademic) ...[

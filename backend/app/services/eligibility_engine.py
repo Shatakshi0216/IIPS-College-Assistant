@@ -22,17 +22,37 @@ def is_student_eligible(student: StudentProfile, notice: NoticeMetadata) -> bool
     # 1. Branch Check
     if notice.eligible_branches:
         normalized_branches = [str(b).strip().upper() for b in notice.eligible_branches]
-        if "ALL" not in normalized_branches:
+        # If 'ALL' is specified, or empty, notice is for everyone
+        if "ALL" not in normalized_branches and len(normalized_branches) > 0:
             st_b = student.branch.strip().upper()
-            matched = any(st_b in nb or nb in st_b for nb in normalized_branches)
+            # Match directly, as substring, or with standard aliases
+            matched = any(
+                st_b == nb or 
+                st_b in nb or 
+                nb in st_b or
+                (st_b in ("IT", "INFORMATION TECHNOLOGY") and nb in ("IT", "INFORMATION TECHNOLOGY")) or
+                ("M.TECH" in st_b and "M.TECH" in nb) or
+                ("MBA" in st_b and "MBA" in nb)
+                for nb in normalized_branches
+            )
             if not matched:
                 return False
 
     # 2. Year Check
     if notice.eligible_years:
         normalized_years = [str(y).strip().upper() for y in notice.eligible_years]
-        if "ALL" not in normalized_years and str(student.year) not in normalized_years:
-            return False
+        if "ALL" not in normalized_years and len(normalized_years) > 0:
+            st_year = str(student.year).strip()
+            # If student year matches
+            matched_year = st_year in normalized_years
+            # Also check semester-derived year (e.g. Sem 7 -> Year 4)
+            if not matched_year and student.semester:
+                sem_year = str((student.semester + 1) // 2)
+                matched_year = sem_year in normalized_years
+
+            # If notice covers 4 or more years, treat as open to all
+            if not matched_year and len(normalized_years) < 4:
+                return False
 
     # 3. CGPA Check
     if notice.min_cgpa and notice.min_cgpa > 0.0:

@@ -90,30 +90,52 @@ def init_production_db():
             db.query(FacultyProfile).filter(FacultyProfile.user_id == u.id).delete(synchronize_session=False)
             db.delete(u)
 
-        # 3. Create official Master Admin account for IIPS DAVV if not exists
-        admin_email = "admin@iips.davv.ac.in"
-        existing_admin = db.query(User).filter(User.email == admin_email).first()
-        if not existing_admin:
-            admin_user = User(
-                email=admin_email,
-                hashed_password=get_password_hash("Admin@IIPS2026"),
-                full_name="IIPS DAVV Administrator",
-                role="faculty",
-                is_active=True
-            )
-            db.add(admin_user)
-            db.flush()
+        # 3. Create demo admin & faculty accounts if they don't exist
+        demo_accounts = [
+            ("admin@iips.ac.in", "admin123", "IIPS Administrator", "faculty", "IIPS-ADM-02", "Director"),
+            ("faculty@iips.ac.in", "faculty123", "Prof. Sharma", "faculty", "FAC-01", "Professor"),
+            ("admin@iips.davv.ac.in", "Admin@IIPS2026", "IIPS DAVV Administrator", "faculty", "IIPS-ADM-01", "Director / Chief Coordinator"),
+        ]
+        for email, pwd, name, role, emp_id, desig in demo_accounts:
+            existing = db.query(User).filter(User.email == email).first()
+            if not existing:
+                u = User(
+                    email=email,
+                    hashed_password=get_password_hash(pwd),
+                    full_name=name,
+                    role=role,
+                    is_active=True
+                )
+                db.add(u)
+                db.flush()
+                prof = FacultyProfile(
+                    user_id=u.id,
+                    employee_id=emp_id,
+                    department="Academic & Examination Affairs",
+                    designation=desig
+                )
+                db.add(prof)
+                print(f"[OK] Account created: {email}")
 
-            admin_profile = FacultyProfile(
-                user_id=admin_user.id,
-                employee_id="IIPS-ADM-01",
-                department="Academic & Examination Affairs",
-                designation="Director / Chief Coordinator"
-            )
-            db.add(admin_profile)
-            print(f"[OK] Master Admin created: {admin_email} / Admin@IIPS2026")
+        # 4. Fix any notice_metadata in DB that was incorrectly locked to IT or single year
+        all_metadata = db.query(NoticeMetadata).all()
+        for meta in all_metadata:
+            doc = db.query(Document).filter(Document.id == meta.document_id).first()
+            if doc:
+                # Rules and circulars MUST be open to all
+                if doc.category in ["rule", "circular"]:
+                    meta.eligible_branches = ["ALL"]
+                    meta.eligible_years = [1, 2, 3, 4, 5]
+                # Fix accidental IT substring false-positives
+                elif meta.eligible_branches == ["IT"]:
+                    meta.eligible_branches = ["ALL"]
+                    meta.eligible_years = [1, 2, 3, 4, 5]
+                # If years was accidentally single year [1]
+                elif meta.eligible_years == [1] and doc.category != "academic_resource":
+                    meta.eligible_years = [1, 2, 3, 4, 5]
+        db.flush()
 
-        # 4. Ensure any uploaded notice/rule document has NoticeMetadata and is visible to students
+        # 5. Ensure any uploaded notice/rule document has NoticeMetadata and is visible to students
         pending_docs = db.query(Document).filter(
             Document.category.in_(["notice", "rule", "circular"]),
             Document.notice_metadata == None
