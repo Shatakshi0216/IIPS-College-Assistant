@@ -230,7 +230,9 @@ class RAGEngine:
         "are", "do", "does", "did", "can", "could", "should", "would", "tell", "me",
         "give", "show", "please", "this", "that", "these", "those", "i", "you", "we", "they",
         "there", "their", "all", "any", "some", "be", "been", "being", "have", "has", "had",
-        "require", "required", "requirement", "requirements", "details", "info", "information"
+        "require", "required", "requirement", "requirements", "details", "info", "information",
+        "college", "university", "institute", "institution", "iips", "davv", "student", "students",
+        "campus", "notice", "notices", "circular", "circulars", "document", "documents", "file", "files", "pdf"
     }
 
     def search_similar_chunks(
