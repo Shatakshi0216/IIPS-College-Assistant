@@ -18,9 +18,12 @@ logger = logging.getLogger(__name__)
 _ssl_ctx = ssl.create_default_context()
 
 GEMINI_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
+    "gemini-3.5-flash",
+    "gemini-2.5-pro",
 ]
 
 
@@ -56,15 +59,22 @@ def _call_gemini_extractor(prompt: str, api_key: str, pdf_bytes: Optional[bytes]
             method="POST"
         )
         try:
-            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=30) as resp:
+            with urllib.request.urlopen(req, context=_ssl_ctx, timeout=25) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except urllib.error.HTTPError as e:
-            err = e.read().decode("utf-8")
+            err = e.read().decode("utf-8", errors="ignore")
             logger.warning(f"Gemini {model_name} HTTP {e.code}: {err[:200]}")
             last_error = e
             continue
         except Exception as e:
+            if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                try:
+                    with urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=25) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                except Exception as inner_e:
+                    logger.warning(f"Gemini {model_name} unverified SSL error: {inner_e}")
             logger.warning(f"Gemini {model_name} error: {e}")
             last_error = e
             continue

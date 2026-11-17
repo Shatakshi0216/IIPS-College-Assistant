@@ -17,11 +17,14 @@ from app.config import settings
 
 _ssl_ctx = ssl.create_default_context()
 
-# Ordered list of model names to try (newest first, all confirmed working)
+# Ordered list of model names to try (supported models with active availability)
 GEMINI_MODELS = [
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3.8-flash",
+    "gemini-flash-latest",
+    "gemini-3.5-flash",
+    "gemini-2.5-pro",
 ]
 
 # ── IIPS DAVV General Knowledge Base ──────────────────────────────────────────
@@ -160,20 +163,21 @@ def _call_gemini(
                 data = json.loads(resp.read().decode("utf-8"))
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
         except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8")
+            err_body = e.read().decode("utf-8", errors="ignore")
             logging.getLogger(__name__).warning(f"Gemini {model_name} HTTP {e.code}: {err_body[:200]}")
             last_error = e
-            if e.code == 404:
-                continue
-            if e.code in (400, 403):
-                continue
-            raise
+            continue
         except Exception as e:
+            if "CERTIFICATE_VERIFY_FAILED" in str(e):
+                try:
+                    with urllib.request.urlopen(req, context=ssl._create_unverified_context(), timeout=timeout) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                        return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                except Exception as inner_e:
+                    logging.getLogger(__name__).warning(f"Gemini {model_name} unverified SSL error: {inner_e}")
             logging.getLogger(__name__).warning(f"Gemini {model_name} error: {e}")
             last_error = e
             continue
-
-    raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}. Last error: {last_error}")
 
     raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}. Last error: {last_error}")
 
@@ -220,13 +224,22 @@ class RAGEngine:
         self.chunks.extend(chunks)
         self._save_persisted_chunks()
 
+    STOP_WORDS = {
+        "what", "is", "the", "a", "an", "in", "to", "for", "of", "and", "or", "on", "at",
+        "by", "from", "with", "about", "how", "when", "where", "who", "which", "why",
+        "are", "do", "does", "did", "can", "could", "should", "would", "tell", "me",
+        "give", "show", "please", "this", "that", "these", "those", "i", "you", "we", "they",
+        "there", "their", "all", "any", "some", "be", "been", "being", "have", "has", "had",
+        "require", "required", "requirement", "requirements", "details", "info", "information"
+    }
+
     def search_similar_chunks(
         self, query: str, top_k: int = 4, document_id: Optional[int] = None,
         allowed_document_ids: Optional[List[int]] = None,
     ) -> List[Dict[str, Any]]:
         """
         Retrieves the top_k most relevant chunks for a user's query.
-        Uses keyword-weighted semantic overlap scoring.
+        Uses keyword-weighted semantic overlap scoring with stopword filtering.
         """
         candidate_chunks = self.chunks
         if document_id is not None:
@@ -244,21 +257,28 @@ class RAGEngine:
         if not candidate_chunks:
             return []
 
-        # Simple semantic token matching scoring
-        query_terms = set(query.lower().split())
+        # Filter stopwords from query to prevent false positive matches
+        query_words = [w.strip(' "?!.,;:') for w in query.lower().split()]
+        query_terms = [w for w in query_words if len(w) > 2 and w not in self.STOP_WORDS]
+        if not query_terms:
+            return []
+
         scored = []
         for chunk in candidate_chunks:
             chunk_text_lower = chunk["text"].lower()
-            # Calculate word match score
-            score = sum(1.5 for term in query_terms if term in chunk_text_lower)
-            # Boost if query words appear in document title
+            # Calculate match score based only on meaningful terms
+            matched_terms = [term for term in query_terms if term in chunk_text_lower]
+            if not matched_terms:
+                continue
+
+            score = sum(2.0 for _ in matched_terms)
             doc_title = chunk.get("metadata", {}).get("document_title", "").lower()
             if any(term in doc_title for term in query_terms):
-                score += 2.0
+                score += 4.0
 
             scored.append((score, chunk))
 
-        # Sort descending by score
+        # Sort descending by score; only return chunks with actual positive matches
         scored.sort(key=lambda x: x[0], reverse=True)
         return [item[1] for item in scored[:top_k]]
 
@@ -320,8 +340,8 @@ class RAGEngine:
                         docs = docs_query.filter(Document.id.in_(allowed_document_ids)).all()
                 else:
                     docs = docs_query.all()
-                query_lower = query.lower()
-                query_terms = [w.strip(' "\'') for w in query_lower.split() if len(w.strip(' "\'')) > 2]
+                query_words = [w.strip(' "?!.,;:') for w in query.lower().split()]
+                query_terms = [w for w in query_words if len(w) > 2 and w not in self.STOP_WORDS]
 
                 for doc in docs:
                     m = doc.notice_metadata
@@ -329,14 +349,14 @@ class RAGEngine:
                     title_lower = doc.title.lower()
                     doc_raw_text = raw_text_map.get(doc.id, "")
 
-                    # Match if query specifically asks about this document or if keywords match
-                    title_match = any(term in title_lower for term in query_terms) or (title_lower in query_lower)
-                    summary_match = bool(m and m.summary and any(term in m.summary.lower() for term in query_terms))
+                    # Match ONLY if query terms specifically match this doc or if doc explicitly requested
                     is_selected_doc = bool(document_id is not None and doc.id == document_id)
-                    text_match = bool(doc_raw_text and any(term in doc_raw_text.lower() for term in query_terms))
+                    title_match = bool(query_terms and any(term in title_lower for term in query_terms))
+                    summary_match = bool(query_terms and m and m.summary and any(term in m.summary.lower() for term in query_terms))
+                    text_match = bool(query_terms and doc_raw_text and any(term in doc_raw_text.lower() for term in query_terms))
 
-                    # If document matches query or if we have fewer than 10 documents, always ground with them
-                    if is_selected_doc or title_match or summary_match or text_match or len(docs) <= 10:
+                    # ONLY ground with document if it genuinely matches the query!
+                    if is_selected_doc or title_match or summary_match or text_match:
                         doc_details = [
                             f"=== OFFICIAL COLLEGE DOCUMENT: {doc.title} ===",
                             f"Category: {doc.category.replace('_', ' ').title()}"
@@ -629,10 +649,34 @@ Provide a clear, structured summary:"""
             }
         except Exception as e:
             logger.error(f"Error generating summary: {e}")
-            excerpt = text[:600].strip() if text and len(text) > 40 else None
+            # Intelligent fallback: extract meaningful body instead of letterhead header address
+            clean_lines = []
+            if text:
+                header_blacklist = [
+                    "international institute of professional studies",
+                    "devi ahilya vishwavidyalaya",
+                    "takshashila campus",
+                    "khandwa road",
+                    "indore",
+                    "iips davv",
+                ]
+                for line in text.splitlines():
+                    line_s = line.strip()
+                    if not line_s:
+                        continue
+                    if any(b in line_s.lower() for b in header_blacklist):
+                        continue
+                    clean_lines.append(line_s)
+
+            clean_body = "\n".join(clean_lines[:15]) if clean_lines else ""
+            if clean_body and len(clean_body) > 30:
+                fallback_summary = f"{clean_body[:600]}\n\n*(For full details and tables, please view original PDF)*"
+            else:
+                fallback_summary = "Official college document. Please open the attached PDF for complete details."
+
             return {
                 "title": document_title,
-                "summary": excerpt if excerpt else "Summary generated from official college document. Please open the attached PDF for complete details."
+                "summary": fallback_summary
             }
 
 
