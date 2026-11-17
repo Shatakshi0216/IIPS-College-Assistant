@@ -37,7 +37,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final List<String> _branches = academicPrograms;
 
   final List<int> _years = [1, 2, 3, 4, 5];
-  final List<int> _semesters = [1, 2, 3, 4, 5, 6, 7, 8];
+  final List<int> _semesters = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   @override
   void dispose() {

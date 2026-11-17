@@ -31,6 +31,7 @@ def is_student_eligible(student: StudentProfile, notice: NoticeMetadata) -> bool
                 st_b in nb or 
                 nb in st_b or
                 (st_b in ("IT", "INFORMATION TECHNOLOGY") and nb in ("IT", "INFORMATION TECHNOLOGY")) or
+                ("CS" in st_b and "CS" in nb) or
                 ("M.TECH" in st_b and "M.TECH" in nb) or
                 ("MBA" in st_b and "MBA" in nb)
                 for nb in normalized_branches

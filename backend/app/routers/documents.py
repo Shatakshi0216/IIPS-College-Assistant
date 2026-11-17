@@ -75,7 +75,7 @@ async def upload_document(
         new_doc.raw_text = raw_text
 
     if category_value in ["notice", "rule", "circular"]:
-        ai_data = extract_notice_metadata(raw_text) if raw_text else {}
+        ai_data = extract_notice_metadata(raw_text, pdf_bytes=pdf_bytes) if (raw_text or pdf_bytes) else {}
 
         # 1. Rules and Circulars apply to the entire college
         if category_value in ["rule", "circular"]:

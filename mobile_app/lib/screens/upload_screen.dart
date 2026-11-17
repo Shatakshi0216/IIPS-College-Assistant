@@ -62,7 +62,7 @@ class _UploadScreenState extends State<UploadScreen>
   ];
 
   final List<String> _branches = uploadPrograms;
-  final List<int> _semesters = [1, 2, 3, 4, 5, 6, 7, 8];
+  final List<int> _semesters = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   @override
   void initState() {
@@ -514,7 +514,7 @@ class _UploadScreenState extends State<UploadScreen>
                   filled: true,
                   fillColor: Colors.white,
                 ),
-                items: [1, 2, 3, 4]
+                items: [1, 2, 3, 4, 5]
                     .map((y) => DropdownMenuItem(value: y, child: Text('Year $y')))
                     .toList(),
                 onChanged: _isUploading

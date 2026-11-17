@@ -336,9 +336,10 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                         );
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                              content:
-                                  Text('Failed to generate AI summary.')),
+                          SnackBar(
+                            content: Text(result['message'] ?? 'Failed to generate AI summary.'),
+                            backgroundColor: Colors.red.shade700,
+                          ),
                         );
                       }
                     },

@@ -72,10 +72,17 @@ def summarize_document(
         raw_text = doc.raw_text or ""
     except Exception:
         pass
-    if not raw_text and doc.file_data:
+    pdf_bytes = bytes(doc.file_data) if doc.file_data else None
+    if not pdf_bytes and doc.file_path and os.path.exists(doc.file_path):
         try:
-            raw_text = extract_text_from_pdf_bytes(bytes(doc.file_data))
-            # Save back to DB so future calls are fast
+            with open(doc.file_path, "rb") as f:
+                pdf_bytes = f.read()
+        except Exception:
+            pass
+
+    if not raw_text and pdf_bytes:
+        try:
+            raw_text = extract_text_from_pdf_bytes(pdf_bytes)
             if raw_text:
                 try:
                     from sqlalchemy import text as sql_text
@@ -86,13 +93,13 @@ def summarize_document(
                     db.rollback()
         except Exception:
             raw_text = ""
-    if not raw_text and doc.file_path:
-        try:
-            raw_text = extract_text_from_pdf(doc.file_path)
-        except Exception:
-            raw_text = ""
 
-    summary_data = rag_engine.summarize_document(doc.title, raw_text, document_id=doc.id)
+    summary_data = rag_engine.summarize_document(
+        doc.title, 
+        raw_text, 
+        document_id=doc.id,
+        pdf_bytes=pdf_bytes
+    )
 
     # Build eligibility string from stored metadata if available
     eligibility_str = None

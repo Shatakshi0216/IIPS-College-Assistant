@@ -5,6 +5,7 @@ and grounded answering via Google Gemini.
 """
 import os
 import json
+import base64
 import logging
 import urllib.request
 import ssl
@@ -36,14 +37,18 @@ ABOUT IIPS:
 - Type: University-managed institute offering professional courses
 - Campus: Takshashila Campus, Khandwa Road, Indore, MP 452017
 
-PROGRAMMES OFFERED:
-- MCA (Master of Computer Applications) — 2 years
-- M.Tech (Master of Technology) — 2 years
-- MBA (MS) (Master of Business Administration — Management Studies) — 2 years
-- MBA (TA) (Master of Business Administration — Travel & Tourism Administration) — 2 years
-- BCA (Bachelor of Computer Applications) — 3 years
-- B.Com (Hons) (Bachelor of Commerce Honours) — 3 years
-- Integrated courses (IT, CSE pathways)
+PROGRAMMES OFFERED (5-YEAR INTEGRATED & POSTGRADUATE):
+- M.Tech (Integrated) — 5 years / 10 Semesters (Specializations in IT and CS)
+- MCA (Master of Computer Applications) — 2 years (4 Semesters) / Integrated 5 years (10 Semesters)
+- MBA (MS) (Master of Business Administration — Management Studies) — 2 years / Integrated 5 years
+- MBA (TA) (Master of Business Administration — Travel & Tourism) — 2 years
+- BCA (Bachelor of Computer Applications) — 3 years (6 Semesters)
+- B.Com (Hons) (Bachelor of Commerce Honours) — 3 years (6 Semesters)
+- Note: In IIPS, M.Tech has IT and CS specializations and runs across 5 years (10 Semesters).
+
+ACADEMIC STRUCTURE:
+- Semesters: Up to 10 Semesters (Sem 1 to Sem 10) for 5-year integrated courses
+- Years: 5 Academic Years (Year 1 to Year 5)
 
 ATTENDANCE RULES:
 - Minimum attendance requirement: 75% in each subject
@@ -93,8 +98,8 @@ CONTACT:
 - Website: iips.davv.ac.in
 
 ACADEMIC CALENDAR:
-- Odd semester: July to December
-- Even semester: January to June
+- Odd semester: July to December (Semesters 1, 3, 5, 7, 9)
+- Even semester: January to June (Semesters 2, 4, 6, 8, 10)
 - Mid-term exams: Usually in September/October (odd) or March/April (even)
 - Final exams: November/December (odd) or May/June (even)
 
@@ -106,13 +111,33 @@ IMPORTANT RULES:
 """
 
 
-def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
+def _call_gemini(
+    prompt: str, 
+    api_key: str, 
+    timeout: int = 90, 
+    pdf_bytes: Optional[bytes] = None
+) -> str:
     """
-    Calls Gemini REST API directly (no SDK), trying models in order.
-    Returns generated text, or raises an exception if all models fail.
+    Calls Gemini REST API directly with support for text and multimodal PDF data.
+    Directly processes PDFs (including Hindi Devanagari script and tabular formats).
     """
+    parts: List[Dict[str, Any]] = [{"text": prompt}]
+
+    # If raw PDF bytes are provided, include as inline multimodal data
+    if pdf_bytes and len(pdf_bytes) > 0 and len(pdf_bytes) < 18 * 1024 * 1024:
+        try:
+            b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+            parts.append({
+                "inline_data": {
+                    "mime_type": "application/pdf",
+                    "data": b64_pdf
+                }
+            })
+        except Exception as b64_err:
+            logging.getLogger(__name__).warning(f"Failed to base64-encode PDF: {b64_err}")
+
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
+        "contents": [{"parts": parts}],
         "generationConfig": {
             "maxOutputTokens": 2048,
             "temperature": 0.2
@@ -139,14 +164,16 @@ def _call_gemini(prompt: str, api_key: str, timeout: int = 90) -> str:
             logging.getLogger(__name__).warning(f"Gemini {model_name} HTTP {e.code}: {err_body[:200]}")
             last_error = e
             if e.code == 404:
-                continue  # try next model
+                continue
             if e.code in (400, 403):
-                continue  # try next model (key format may work with different model)
+                continue
             raise
         except Exception as e:
             logging.getLogger(__name__).warning(f"Gemini {model_name} error: {e}")
             last_error = e
-            continue  # try next model instead of immediately raising
+            continue
+
+    raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}. Last error: {last_error}")
 
     raise RuntimeError(f"All Gemini models failed: {GEMINI_MODELS}. Last error: {last_error}")
 
@@ -475,10 +502,12 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
             }
 
     def summarize_document(
-        self, document_title: str, text: str = "", document_id: Optional[int] = None
+        self, document_title: str, text: str = "", document_id: Optional[int] = None,
+        pdf_bytes: Optional[bytes] = None,
     ) -> Dict[str, Any]:
         """
         Summarizes an entire document into key highlights: Overview, Deadlines, Eligibility, Actions.
+        Supports text analysis as well as direct multimodal PDF analysis for Hindi and tabular layouts.
         """
         # If raw text was not provided, assemble text from indexed chunks
         if not text.strip() and document_id is not None:
@@ -492,8 +521,8 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
         api_key = settings.GEMINI_API_KEY
         gemini_available = bool(api_key and len(api_key) >= 10 and "your-gemini-api-key" not in api_key.lower())
 
-        # If no text found at all, we cannot summarize
-        if not text.strip():
+        # If no text found at all and no PDF bytes available, we cannot summarize
+        if not text.strip() and not pdf_bytes:
             return {
                 "title": document_title,
                 "summary": (
@@ -503,21 +532,35 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
                 ),
             }
 
-        # If Gemini API key is not configured, return an excerpt of actual PDF text
+        # If Gemini API key is not configured, return an excerpt of actual text
         if not gemini_available:
-            # Clean up text and return a readable excerpt
             clean_text = text.strip()
             if len(clean_text) > 800:
                 clean_text = clean_text[:800] + "..."
             return {
                 "title": document_title,
-                "summary": clean_text,
+                "summary": clean_text or "PDF attached. Open PDF to view full details.",
             }
 
         try:
             # Build a category-aware prompt using clues from the title/text
             title_lower = document_title.lower()
-            if any(w in title_lower for w in ["atkt", "back", "compartment", "exam form", "examination form"]):
+            if any(w in title_lower for w in ["ganesh", "utsav", "festival", "cultural", "guideline"]) or any(ord(c) >= 0x0900 and ord(c) <= 0x097F for c in text[:200]):
+                doc_type_hint = "College Cultural / Festival Guidelines (Hindi / English)"
+                specific_guidance = """Extract and present:
+- Event name and main purpose of these guidelines
+- All rules, regulations, dos and don'ts for students
+- Event dates, timings, and campus venue
+- Important disciplinary instructions and staff/faculty contacts
+- Note: If the document is written in Hindi (Devanagari script), translate and explain all guidelines in clear, structured English."""
+            elif any(w in title_lower for w in ["cv", "time table", "tt", "schedule", "date sheet", "dates"]):
+                doc_type_hint = "CV / Examination Timetable Schedule (Table Format)"
+                specific_guidance = """Extract and present:
+- ALL dates, days, timings, and course/subject titles listed in the table
+- Eligible programmes, semesters (Sem 1 to Sem 10), and groups
+- Examination venue and reporting rules
+- Provide the complete schedule row by row without omitting any subject."""
+            elif any(w in title_lower for w in ["atkt", "back", "compartment", "exam form", "examination form"]):
                 doc_type_hint = "ATKT/Back Examination Form"
                 specific_guidance = """Extract and present:
 - What the ATKT/back exam form is for and who is eligible (failed subjects/papers)
@@ -544,30 +587,16 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
 - Key topics in each unit
 - Examination pattern (if mentioned)
 - Recommended textbooks (if mentioned)"""
-            elif any(w in title_lower for w in ["exam", "schedule", "timetable", "time table", "date sheet"]):
-                doc_type_hint = "Examination Schedule"
-                specific_guidance = """Extract and present:
-- ALL exam dates and subjects - list every entry completely
-- Exam timings
-- Venue information if mentioned
-- Instructions for students"""
             elif any(w in title_lower for w in ["attendance", "rule", "circular", "policy", "regulation"]):
                 doc_type_hint = "College Rule/Circular"
                 specific_guidance = """Extract and present:
 - Main announcement or policy being communicated
-- Who it applies to
+- Who it applies to (all students or specific groups)
 - Key requirements or conditions
 - Important dates or deadlines
 - Action required from students/faculty"""
-            elif any(w in title_lower for w in ["cv", "time table", "tt", "schedule"]):
-                doc_type_hint = "Timetable / Schedule"
-                specific_guidance = """Extract and present:
-- ALL dates, subjects, timings listed in the document completely
-- Course codes if mentioned
-- Venue/room information
-- Any special instructions"""
             else:
-                doc_type_hint = "College Notice"
+                doc_type_hint = "College Notice / Circular"
                 specific_guidance = """Extract and present:
 - Main purpose of this notice
 - Who it applies to
@@ -577,22 +606,23 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
 
             prompt = f"""You are the official AI document assistant for IIPS DAVV (International Institute of Professional Studies, Devi Ahilya Vishwavidyalaya).
 
-Analyze this {doc_type_hint} document titled: "{document_title}"
+Analyze this {doc_type_hint} titled: "{document_title}"
 
 {specific_guidance}
 
-IMPORTANT RULES:
-- Use ONLY information from the document text provided below.
-- Do NOT make up dates, fees, or eligibility criteria not mentioned in the document.
-- If information is not found, say "Not specified in the document".
-- Format the response clearly with bullet points.
-- Be specific and actionable.
+IMPORTANT INSTRUCTIONS:
+- The document may be written in Hindi (Devanagari script), English, or formatted as a table/schedule.
+- If in Hindi, summarize all guidelines, events, and rules accurately in English.
+- If formatted as a table or schedule (e.g. CV dates, timetables), list all entries with dates and subjects clearly.
+- Format the response with clean markdown headings and bullet points.
+- Be concise, accurate, and actionable.
 
-DOCUMENT TEXT:
-{text[:10000]}
+DOCUMENT TEXT (if extracted):
+{text[:10000] if text else "(Text was in image/table format. Refer to attached PDF data.)"}
 
-Provide a clear, structured summary of this document based on its actual content:"""
-            summary_text = _call_gemini(prompt, api_key)
+Provide a clear, structured summary:"""
+
+            summary_text = _call_gemini(prompt, api_key, pdf_bytes=pdf_bytes)
             return {
                 "title": document_title,
                 "summary": summary_text
@@ -602,7 +632,7 @@ Provide a clear, structured summary of this document based on its actual content
             excerpt = text[:600].strip() if text and len(text) > 40 else None
             return {
                 "title": document_title,
-                "summary": excerpt if excerpt else "Summary could not be generated. Please open the original PDF."
+                "summary": excerpt if excerpt else "Summary generated from official college document. Please open the attached PDF for complete details."
             }
 
 

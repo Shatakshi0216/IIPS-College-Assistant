@@ -2,29 +2,18 @@
 ==============================================================================
 FILE: backend/app/services/pdf_processor.py
 PURPOSE: PDF Processing Service.
-         Extracts raw text from uploaded PDF files and splits the text into
-         manageable, overlapping chunks for AI embedding and RAG search.
-==============================================================================
-HOW IT WORKS:
-1. extract_text_from_pdf():
-   - Uses PyPDF's PdfReader to open the file.
-   - Iterates through each page in sequence.
-   - Extracts all plain text lines and joins them with clean spacing.
-   
-2. chunk_document_text():
-   - Uses LangChain's RecursiveCharacterTextSplitter.
-   - Cuts lengthy documents into chunks (default: 800 characters).
-   - Keeps an overlap (default: 150 characters) so sentences sliced across
-     boundaries don't lose context.
-   - Attaches metadata (document_id, document_title, chunk_index) to each chunk
-     so the AI can accurately cite sources.
+         Extracts raw text and table layouts (bilingual Hindi/English)
+         from uploaded PDF files and splits into chunks for RAG indexing.
 ==============================================================================
 """
 
 import os
+import logging
 from io import BytesIO
 from typing import List, Dict, Any
 from pypdf import PdfReader
+
+logger = logging.getLogger(__name__)
 
 try:
     from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -33,43 +22,70 @@ except ImportError:
 
 
 def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
-    """Extract text directly from PDF bytes without temporary filesystem storage."""
+    """
+    Extracts text and structured tables directly from PDF bytes.
+    Uses pdfplumber (superior for Hindi Devanagari script, layout, and tables)
+    with seamless fallback to pypdf.
+    """
     if not pdf_bytes:
         return ""
-    reader = PdfReader(BytesIO(pdf_bytes))
+
     text_content = []
-    for page in reader.pages:
-        page_text = page.extract_text()
-        if page_text:
-            text_content.append(page_text.strip())
+
+    # 1. Try pdfplumber first (handles tables, layout, and Unicode/Hindi significantly better)
+    try:
+        import pdfplumber
+        with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+            for page_idx, page in enumerate(pdf.pages):
+                page_parts = []
+                # Extract text
+                ptxt = page.extract_text(layout=False)
+                if ptxt and ptxt.strip():
+                    page_parts.append(ptxt.strip())
+                # Extract tables (e.g. CV dates, timetables, examination schedules)
+                try:
+                    tables = page.extract_tables()
+                    if tables:
+                        for tbl in tables:
+                            table_lines = []
+                            for row in tbl:
+                                if any(row):
+                                    row_str = " | ".join(str(cell or "").strip() for cell in row)
+                                    table_lines.append(row_str)
+                            if table_lines:
+                                page_parts.append("\n[TABLE DATA]:\n" + "\n".join(table_lines))
+                except Exception:
+                    pass
+
+                if page_parts:
+                    text_content.append("\n".join(page_parts))
+    except Exception as exc:
+        logger.warning(f"pdfplumber extraction note: {exc}")
+
+    # 2. If pdfplumber didn't extract enough text, fallback/supplement with pypdf
+    if not text_content or len("\n\n".join(text_content).strip()) < 50:
+        try:
+            reader = PdfReader(BytesIO(pdf_bytes))
+            pypdf_parts = []
+            for page in reader.pages:
+                page_text = page.extract_text()
+                if page_text:
+                    pypdf_parts.append(page_text.strip())
+            if len("\n\n".join(pypdf_parts).strip()) > len("\n\n".join(text_content).strip()):
+                return "\n\n".join(pypdf_parts)
+        except Exception:
+            pass
+
     return "\n\n".join(text_content)
 
 
 def extract_text_from_pdf(file_path: str) -> str:
-    """
-    Extracts all text content from a PDF document stored on disk.
-    
-    Args:
-        file_path (str): Absolute or relative path to the .pdf file.
-        
-    Returns:
-        str: Consolidated plain-text string extracted across all pages.
-        
-    Raises:
-        FileNotFoundError: If the specified file_path does not exist.
-    """
+    """Extracts text from a PDF file on disk using extract_text_from_pdf_bytes."""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"PDF file not found at path: {file_path}")
 
-    text_content = []
-    reader = PdfReader(file_path)
-    
-    for page_idx, page in enumerate(reader.pages):
-        page_text = page.extract_text()
-        if page_text:
-            text_content.append(page_text.strip())
-
-    return "\n\n".join(text_content)
+    with open(file_path, "rb") as f:
+        return extract_text_from_pdf_bytes(f.read())
 
 
 def chunk_document_text(
@@ -79,24 +95,7 @@ def chunk_document_text(
     chunk_size: int = 800,
     chunk_overlap: int = 150
 ) -> List[Dict[str, Any]]:
-    """
-    Splits long extracted document text into overlapping chunks for RAG indexing.
-    
-    Why Chunking and Overlap Matter:
-    - LLMs have context limits and perform best when fed specific, relevant paragraphs.
-    - Chunk overlap (150 chars) ensures that if a vital rule (e.g., '75% attendance
-      required for mid-terms') falls across two chunks, the meaning isn't severed.
-      
-    Args:
-        text (str): Full text extracted from the PDF.
-        document_id (int): Foreign key ID of the parent document.
-        document_title (str): Title of the document for source citation.
-        chunk_size (int): Max character length per chunk (default 800).
-        chunk_overlap (int): Number of overlapping characters between chunks (default 150).
-        
-    Returns:
-        List[Dict[str, Any]]: List of dictionary items with 'text' and 'metadata'.
-    """
+    """Splits long extracted document text into overlapping chunks for RAG indexing."""
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
         chunk_overlap=chunk_overlap,

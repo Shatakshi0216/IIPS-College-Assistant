@@ -1,7 +1,9 @@
 /// Centralized academic programme list for IIPS DAVV.
-/// Used in registration, upload forms, and eligibility filtering.
+/// In IIPS DAVV, M.Tech is an integrated 5-year programme with IT and CS specializations.
 const List<String> academicPrograms = [
   "MCA",
+  "M.Tech (IT)",
+  "M.Tech (CS)",
   "M.Tech",
   "MBA (MS)",
   "MBA (TA)",

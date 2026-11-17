@@ -34,7 +34,7 @@ class _AcademicResourcesScreenState extends State<AcademicResourcesScreen> {
   String _selectedType = 'ALL'; // ALL, syllabus, question_paper, notes
 
   final List<String> _branches = ['ALL', ...academicPrograms];
-  final List<int> _semesters = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  final List<int> _semesters = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
   @override
   void initState() {

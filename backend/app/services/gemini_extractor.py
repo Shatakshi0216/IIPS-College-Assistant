@@ -4,11 +4,12 @@ Uses Google Gemini to analyze uploaded PDF notices and extract structured JSON m
 (deadlines, eligible branches, minimum CGPA, required actions).
 """
 import json
+import base64
 import logging
 import urllib.request
 import ssl
 import warnings
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 from app.config import settings
 
@@ -23,10 +24,24 @@ GEMINI_MODELS = [
 ]
 
 
-def _call_gemini_extractor(prompt: str, api_key: str) -> str:
-    """Direct REST call to Gemini, trying models in order."""
+def _call_gemini_extractor(prompt: str, api_key: str, pdf_bytes: Optional[bytes] = None) -> str:
+    """Direct REST call to Gemini, trying models in order with optional multimodal PDF support."""
+    parts: List[Dict[str, Any]] = [{"text": prompt}]
+
+    if pdf_bytes and len(pdf_bytes) > 0 and len(pdf_bytes) < 18 * 1024 * 1024:
+        try:
+            b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+            parts.append({
+                "inline_data": {
+                    "mime_type": "application/pdf",
+                    "data": b64_pdf
+                }
+            })
+        except Exception as e:
+            logger.warning(f"Error base64 encoding PDF for extractor: {e}")
+
     body = json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}]
+        "contents": [{"parts": parts}]
     }).encode("utf-8")
 
     last_error = None
@@ -48,40 +63,42 @@ def _call_gemini_extractor(prompt: str, api_key: str) -> str:
             err = e.read().decode("utf-8")
             logger.warning(f"Gemini {model_name} HTTP {e.code}: {err[:200]}")
             last_error = e
-            continue  # always try next model
+            continue
         except Exception as e:
             logger.warning(f"Gemini {model_name} error: {e}")
             last_error = e
-            continue  # try next model
+            continue
 
     raise RuntimeError(f"All Gemini models unavailable: {GEMINI_MODELS}. Last error: {last_error}")
+
 
 # System instruction defining exact JSON schema output
 EXTRACTION_PROMPT = """
 You are an intelligent administrative AI for International Institute of Professional Studies, DAVV (IIPS DAVV).
-You are given the extracted text of an official college notice or circular.
+You are given an official college notice, circular, holiday circular, cultural festival guideline (which may be in Hindi / Devanagari script), or examination timetable/schedule (table format).
 Analyze the document carefully and return ONLY a valid JSON object with the following fields:
 
 {
-  "title": "A concise, clear title for this notice",
-  "summary": "A specific 2 to 4 sentence summary that explains what this notice is about, who it's for, key dates/deadlines, and what students need to do. Extract ACTUAL specifics from the document — do NOT write generic placeholder text.",
-  "action_required": "What the student needs to do (e.g. submit form, register online, pay fee), or null if purely informational",
-  "deadline": "The final date or deadline mentioned in YYYY-MM-DD format if identifiable, or a human readable date string like 'October 25, 2026', or null",
-  "eligible_branches": ["List of eligible programmes at IIPS DAVV: MCA, M.Tech, MBA (MS), MBA (TA), BCA, B.Com (Hons), IT, CSE — or ['ALL'] if open to all students"],
-  "eligible_years": [List of eligible years as integers, e.g. [3, 4], or [1, 2, 3, 4, 5] if for all students],
-  "min_cgpa": 0.0, // Minimum CGPA required as a float (e.g. 7.5), or 0.0 if no CGPA requirement
+  "title": "A concise, clear title for this notice (translate to English if original is in Hindi)",
+  "summary": "A specific 2 to 4 sentence summary that explains what this notice is about, key guidelines, rules, dates/deadlines, and actions required. If the document is in Hindi, provide the summary in clear English. If it is a table/schedule, list the main schedule dates.",
+  "action_required": "What the student needs to do (e.g. follow guidelines, submit form, adhere to dress code), or null if purely informational",
+  "deadline": "The date or deadline mentioned in YYYY-MM-DD or readable date string like 'October 25, 2026', or null",
+  "eligible_branches": ["List of eligible programmes: MCA, M.Tech, M.Tech (IT), M.Tech (CS), MBA, BCA, B.Com, IT, CSE — or ['ALL'] if open to all students"],
+  "eligible_years": [List of eligible years as integers [1, 2, 3, 4, 5], or [1, 2, 3, 4, 5] if open to all],
+  "min_cgpa": 0.0,
   "contact_info": "Contact email, phone, or faculty name mentioned, or null",
-  "is_urgent": true/false // true if the deadline is within 3 days or marked urgent/mandatory
+  "is_urgent": true/false
 }
 
+Note: If this document is a general rule, circular, cultural guidelines (e.g. Ganesh Utsav), or college announcement, eligible_branches MUST be ["ALL"] and eligible_years MUST be [1, 2, 3, 4, 5].
 DO NOT include markdown code fences or backticks (e.g. do NOT include ```json). Return ONLY pure JSON text.
 """
 
 
-def extract_notice_metadata(pdf_text: str) -> Dict[str, Any]:
+def extract_notice_metadata(pdf_text: str = "", pdf_bytes: Optional[bytes] = None) -> Dict[str, Any]:
     """
-    Sends notice text to Google Gemini and parses the structured JSON metadata.
-    If GEMINI_API_KEY is not configured, provides a sensible fallback parser.
+    Sends notice text (and/or raw PDF bytes) to Google Gemini to extract structured JSON metadata.
+    Handles Hindi Devanagari script, table layouts, and English seamlessly.
     """
     api_key = settings.GEMINI_API_KEY
 
@@ -91,8 +108,9 @@ def extract_notice_metadata(pdf_text: str) -> Dict[str, Any]:
         return _fallback_metadata_extractor(pdf_text)
 
     try:
-        full_prompt = f"{EXTRACTION_PROMPT}\n\nDOCUMENT TEXT:\n{pdf_text[:12000]}"
-        response_text = _call_gemini_extractor(full_prompt, api_key)
+        text_context = f"\n\nDOCUMENT TEXT:\n{pdf_text[:12000]}" if pdf_text else ""
+        full_prompt = f"{EXTRACTION_PROMPT}{text_context}"
+        response_text = _call_gemini_extractor(full_prompt, api_key, pdf_bytes=pdf_bytes)
 
         # Strip accidental code blocks if model added them
         if response_text.startswith("```json"):

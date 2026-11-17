@@ -20,8 +20,8 @@ router = APIRouter(prefix="/resources", tags=["Academic Resources"])
 @router.get("", response_model=List[DocumentResponse])
 def get_academic_resources(
     branch: Optional[str] = Query(None, description="e.g. CSE, IT, ECE"),
-    year: Optional[int] = Query(None, description="e.g. 1, 2, 3, 4"),
-    semester: Optional[int] = Query(None, description="e.g. 1 to 8"),
+    year: Optional[int] = Query(None, description="e.g. 1 to 5"),
+    semester: Optional[int] = Query(None, description="e.g. 1 to 10"),
     subject_name: Optional[str] = Query(None, description="Search by subject name"),
     resource_type: Optional[str] = Query(None, description="syllabus, question_paper, notes"),
     exam_year: Optional[int] = Query(None, description="e.g. 2023, 2024"),
