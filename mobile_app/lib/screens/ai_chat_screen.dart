@@ -312,60 +312,6 @@ class _AiChatScreenState extends State<AiChatScreen> {
                         strong: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black),
                       ),
                     ),
-
-                  // Source Citations
-                  if (!isUser && msg.sources.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    const Divider(height: 1),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.verified_outlined, size: 14, color: Colors.blueAccent),
-                        const SizedBox(width: 4),
-                        Text(
-                          'OFFICIAL SOURCES CITED (${msg.sources.length})',
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 0.5,
-                            color: Colors.blueAccent,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    ...msg.sources.map((s) {
-                      return Container(
-                        margin: const EdgeInsets.only(top: 4),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50.withOpacity(0.5),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              '• ${s.documentTitle}',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                color: Color(0xFF1E293B),
-                              ),
-                            ),
-                            if (s.snippet.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 2, left: 6),
-                                child: Text(
-                                  '"${s.snippet}"',
-                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade700, fontStyle: FontStyle.italic),
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
                 ],
               ),
             ),

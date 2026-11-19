@@ -4,6 +4,7 @@
 /// ==============================================================================
 
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/user_model.dart';
 import '../models/document_model.dart';
@@ -306,6 +307,7 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                         showDialog(
                           context: context,
                           builder: (dctx) => AlertDialog(
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                             title: const Row(
                               children: [
                                 Icon(Icons.auto_awesome, color: Colors.purple),
@@ -320,10 +322,20 @@ class NoticeFeedScreenState extends State<NoticeFeedScreen> {
                                 ),
                               ],
                             ),
-                            content: SingleChildScrollView(
-                              child: Text(
-                                data['summary'] ?? 'Summary not available.',
-                                style: const TextStyle(height: 1.5),
+                            content: SizedBox(
+                              width: double.maxFinite,
+                              child: SingleChildScrollView(
+                                child: MarkdownBody(
+                                  data: data['summary'] ?? 'Summary not available.',
+                                  styleSheet: MarkdownStyleSheet(
+                                    p: const TextStyle(fontSize: 14, height: 1.5, color: Color(0xFF1E293B)),
+                                    h1: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                    h2: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                    h3: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                    strong: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF0F172A)),
+                                    listBullet: const TextStyle(fontSize: 14, color: Colors.purple),
+                                  ),
+                                ),
                               ),
                             ),
                             actions: [

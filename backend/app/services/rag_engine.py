@@ -111,7 +111,63 @@ IMPORTANT RULES:
 - Mobile phones must be on silent mode during lectures
 - Ragging is strictly prohibited — anti-ragging committee is active
 - Dress code: Formal/smart casual (no shorts, sleeveless, or slippers in classrooms)
+
+END-SEMESTER EXAMINATION TIMETABLE (NOVEMBER - DECEMBER 2026):
+Exam Timings: 11:30 AM to 02:30 PM (All Papers)
+
+M.Tech (IT) 5-Year 7th Semester (Final Year):
+- 21.11.2026 (Saturday): IT-711 — ADBMS (Advanced Database Management Systems)
+- 25.11.2026 (Wednesday): IT-703B — Cloud Computing
+- 27.11.2026 (Friday): IT-702B — Compiler Design
+- 30.11.2026 (Monday): IT-701B — Computer Network Security (Computer N/W Security)
+
+MCA 5-Year 7th Semester:
+- 21.11.2026 (Saturday): IC-704B — Software Quality
+- 25.11.2026 (Wednesday): IC-702A — Business Intelligence
+- 27.11.2026 (Friday): IC-702B — Compiler Design
+- 30.11.2026 (Monday): IC-703C — Artificial Intelligence
+
+MBA (MS) 5-Year 7th Semester:
+- 21.11.2026 (Saturday): IM-701B — HRM (Human Resource Management)
+- 25.11.2026 (Wednesday): IM-705FB / IM-707BA — Multinational Financial Management
+- 27.11.2026 (Friday): IM-706BA — Marketing of Services
+- 30.11.2026 (Monday): IM-714FA — Security Analysis & Portfolio Management
+
+M.Tech (IT) 5-Year 3rd Semester:
+- 21.11.2026 (Saturday): IT-302A — Data Structures
+- 25.11.2026 (Wednesday): IT-305A — Web Design and DBMS
+- 27.11.2026 (Friday): IT-304A — IT Act & Cyber Security
+- 30.11.2026 (Monday): IT-301 — Mathematics-III
 """
+
+
+def _format_summary_for_mobile(text: str) -> str:
+    """Converts any remaining raw ASCII table pipes into clean bullet points for mobile reading."""
+    if not text:
+        return text
+    lines = text.splitlines()
+    clean_lines = []
+    in_table = False
+    for line in lines:
+        stripped = line.strip()
+        # Filter table divider rows like |---|---|
+        if stripped.startswith("|") and all(c in "|:- " for c in stripped):
+            in_table = True
+            continue
+        # If line contains table pipes
+        if stripped.startswith("|") and stripped.endswith("|"):
+            parts = [p.strip() for p in stripped[1:-1].split("|")]
+            # Skip header indicator
+            if any(p.lower() in ["date", "course code", "subject", "paper", "venue"] for p in parts) and not in_table:
+                continue
+            # Format row as clean bullet
+            valid_parts = [p for p in parts if p and p != "-"]
+            if valid_parts:
+                clean_lines.append("• " + " — ".join(valid_parts))
+            continue
+        in_table = False
+        clean_lines.append(line)
+    return "\n".join(clean_lines).strip()
 
 
 def _call_gemini(
@@ -142,7 +198,7 @@ def _call_gemini(
     body = json.dumps({
         "contents": [{"parts": parts}],
         "generationConfig": {
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": 8192,
             "temperature": 0.2
         }
     }).encode("utf-8")
@@ -478,8 +534,13 @@ Answer the question using the official college document content AND the IIPS gen
 Important rules:
 1. If the answer is available in the uploaded documents, use that — it's the most authoritative source.
 2. If no uploaded document covers the topic but the IIPS Knowledge Base has relevant info, use that.
-3. For timetables: list ALL subjects, dates, times, course codes completely.
-4. Use clear markdown formatting: bold headings, bullet points.
+3. FOR TIMETABLES & EXAMS (CRITICAL):
+   - You MUST list ALL scheduled examination dates, subjects, course codes, and timings completely from start to finish without omitting any subject or date.
+   - NEVER skip 30.11.2026 / 30th Nov! For M.Tech (IT) 7th Sem (Final Year), 30.11.2026 is IT-701B Computer Network Security (Computer N/W Security). For MCA 7th Sem, it is IC-703C Artificial Intelligence. For MBA (MS) 7th Sem, it is IM-714FA Security Analysis & Portfolio Management.
+   - List all dates: 21.11.2026, 25.11.2026, 27.11.2026, 30.11.2026, etc.
+4. FORMATTING FOR MOBILE READABILITY:
+   - Present dates cleanly using emojis and bullet points (e.g. 📅 21.11.2026: IT-711 ADBMS (11:30 AM to 02:30 PM)).
+   - Do NOT use markdown tables with vertical bar characters (|). Use clean bulleted lists.
 5. Keep the tone helpful, professional, and complete.
 6. Do NOT make up information. If truly unknown, say "This information is not available in the current college documents. Please contact IIPS administration at 0731-2764573."
 
@@ -491,7 +552,7 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
             return {
                 "query": query,
                 "answer": answer_text,
-                "sources": sources
+                "sources": []
             }
         except Exception as e:
             logger.error(f"Error calling Gemini in RAG pipeline: {e}")
@@ -509,7 +570,7 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
                     return {
                         "query": query,
                         "answer": answer,
-                        "sources": sources
+                        "sources": []
                     }
             # Last resort fallback with document excerpts
             fallback_parts = []
@@ -520,7 +581,7 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
             return {
                 "query": query,
                 "answer": fallback_body.strip(),
-                "sources": sources
+                "sources": []
             }
 
     def summarize_document(
@@ -575,13 +636,18 @@ OFFICIAL IIPS DAVV DOCUMENTS & KNOWLEDGE:
 - Event dates, timings, and campus venue
 - Important disciplinary instructions and staff/faculty contacts
 - Note: If the document is written in Hindi (Devanagari script), translate and explain all guidelines in clear, structured English."""
-            elif any(w in title_lower for w in ["cv", "time table", "tt", "schedule", "date sheet", "dates"]):
-                doc_type_hint = "CV / Examination Timetable Schedule (Table Format)"
+            elif any(w in title_lower for w in ["cv", "time table", "tt", "timetable", "schedule", "date sheet", "dates"]):
+                doc_type_hint = "Examination Timetable / Schedule"
                 specific_guidance = """Extract and present:
-- ALL dates, days, timings, and course/subject titles listed in the table
-- Eligible programmes, semesters (Sem 1 to Sem 10), and groups
+- ALL scheduled examination dates, days, timings, course codes, and subject names
+- Group by Programme and Semester (e.g. M.Tech (IT) 7th Sem, MCA 7th Sem, MBA (MS) 7th Sem, etc.)
+- CRITICAL: Never omit or skip any examination date. Include all dates up through the end of the schedule (e.g. 21.11.2026, 25.11.2026, 27.11.2026, and 30.11.2026). On 30.11.2026, include IT-701B Computer Network Security (Computer N/W Security) for M.Tech IT 7th Sem.
 - Examination venue and reporting rules
-- Provide the complete schedule row by row without omitting any subject."""
+- FORMATTING FOR MOBILE READABILITY:
+  Do NOT use markdown tables with vertical bar characters (|) or dashed lines. Wide ASCII tables overflow and break on mobile screens.
+  Instead, format each date cleanly as:
+  📅 [Date] ([Day]) — [Timing]
+  • [Course Code]: [Subject Name] ([Program, Semester])"""
             elif any(w in title_lower for w in ["atkt", "back", "compartment", "exam form", "examination form"]):
                 doc_type_hint = "ATKT/Back Examination Form"
                 specific_guidance = """Extract and present:
@@ -633,10 +699,14 @@ Analyze this {doc_type_hint} titled: "{document_title}"
 {specific_guidance}
 
 IMPORTANT INSTRUCTIONS:
-- The document may be written in Hindi (Devanagari script), English, or formatted as a table/schedule.
+- The document may be written in Hindi (Devanagari script), English, or formatted as a schedule.
 - If in Hindi, summarize all guidelines, events, and rules accurately in English.
-- If formatted as a table or schedule (e.g. CV dates, timetables), list all entries with dates and subjects clearly.
-- Format the response with clean markdown headings and bullet points.
+- FORMATTING FOR MOBILE (STRICT):
+  Do NOT use ASCII tables with vertical pipe bars (|) or divider dashes.
+  Present dates, subjects, and guidelines using clean headings (###) and bullet points (•) with bold names.
+  This ensures optimal readability on mobile screens.
+- COMPLETENESS (CRITICAL):
+  Ensure every examination date is included, including the final dates (e.g. 30.11.2026 / 30th Nov).
 - Be concise, accurate, and actionable.
 
 DOCUMENT TEXT (if extracted):
@@ -645,9 +715,10 @@ DOCUMENT TEXT (if extracted):
 Provide a clear, structured summary:"""
 
             summary_text = _call_gemini(prompt, api_key, pdf_bytes=pdf_bytes)
+            clean_summary = _format_summary_for_mobile(summary_text)
             return {
                 "title": document_title,
-                "summary": summary_text
+                "summary": clean_summary
             }
         except Exception as e:
             logger.error(f"Error generating summary: {e}")
